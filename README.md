@@ -9,3 +9,5 @@ This system bridges traditional Ayurvedic medicine with modern machine learning 
 e
 
 ## 🏗️ System Architecture
+
+dietary recommendation 
