@@ -283,7 +283,7 @@ User Query/Symptoms
 | Component | Status | Technology | Accuracy/Performance |
 |-----------|--------|------------|---------------------|
 | 🏥 Disease Prediction | ✅ In Development | ML Classification | TBD |
-| 💊 Medicine Recommendation | ✅ **In Development** | SVM, Random Forest, Decision Tree | 98% (Top-3) |
+| 💊 Medicine Recommendation | ✅ **In Development** | SVM, Random Forest, Decision Tree | TBD |
 | 🍽️ Diet Recommendation | ✅ In Development | Rule-based + ML | TBD |
 | 💬 Q&A Component | ✅ In Development | NLP, Knowledge Base | TBD |
 
