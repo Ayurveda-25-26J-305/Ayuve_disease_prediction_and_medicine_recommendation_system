@@ -43,15 +43,12 @@ This project implements and compares three different machine learning algorithms
 -  **Random Forest Classifier**
 -  **Decision Tree Classifier**
 -  **Support Vector Machine (SVM)** ⭐ *Recommended*
-
-  ✨ Key Features
-
-✅ Multi-class classification for 15 different herbs
-✅ Top-K prediction support (Top-1, Top-3, Top-5)
-✅ Confidence scores for each recommendation
-✅ Cross-validation for robust performance estimation
-✅ Easy-to-use prediction pipeline
-✅ Ready for deployment (.pkl model files)
+-  ✅ Multi-class classification for 15 different herbs
+-  ✅ Top-K prediction support (Top-1, Top-3, Top-5)
+-  ✅ Confidence scores for each recommendation
+-  ✅ Cross-validation for robust performance estimation
+-  ✅ Easy-to-use prediction pipeline
+-  ✅ Ready for deployment (.pkl model files)
 
 📁 Dataset
 
@@ -69,3 +66,21 @@ Amalaki, Ashwagandha, Brahmi, Gudmar, Guggulu, Jatamansi, Neem, Nirgundi, Pippal
 🏆 Model Performance
 Summary Table
 ModelTop-1 AccuracyTop-3 AccuracyTop-5 AccuracyCV MeanCV StdRandom Forest52%96.75%98%57.55%1.95%Decision Tree52%96.75%98%58%0.88%SVM52%98%98.5%58%0.88%
+
+
+
+💡 Key Findings
+
+✅ All three models achieve similar Top-1 accuracy (~52%), indicating the complexity of the multi-class classification problem
+🎯 Top-3 accuracy is excellent (>96%), meaning the correct herb is almost always in the top 3 recommendations
+⭐ SVM shows slightly better Top-3 performance (98%) and is the recommended model for deployment
+📊 Cross-validation results show consistent performance across all folds
+
+📦 Requirements
+pythonpandas
+numpy
+matplotlib
+scikit-learn
+joblib
+🚀 Installation
+bashpip install pandas numpy matplotlib scikit-learn joblib
