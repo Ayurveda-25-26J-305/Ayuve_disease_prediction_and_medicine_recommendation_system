@@ -50,22 +50,28 @@ This project implements and compares three different machine learning algorithms
 -  ✅ Easy-to-use prediction pipeline
 -  ✅ Ready for deployment (.pkl model files)
 
-📁 Dataset
+## 📁 Dataset
 
-Size: 2,000 patient records
-Features: 4 categorical variables
+- **Size**: 2,000 patient records
+- **Features**: 4 categorical variables
+  - Disease type
+  - Severity level (Low, Medium, High)
+  - Dominant Dosha (Vata, Pitta, Kapha)
+  - Age group (Child, Adult, Elder)
+- **Target**: Recommended herb (15 different Ayurvedic herbs)
 
-Disease type
-Severity level (Low, Medium, High)
-Dominant Dosha (Vata, Pitta, Kapha)
-Age group (Child, Adult, Elder)
-
-
-🌿 Herbs in Dataset
+### 🌿 Herbs in Dataset
 Amalaki, Ashwagandha, Brahmi, Gudmar, Guggulu, Jatamansi, Neem, Nirgundi, Pippali, Shankhapushpi, Triphala, Tulsi, Turmeric, Vasaka, Yashtimadhu
-🏆 Model Performance
-Summary Table
-ModelTop-1 AccuracyTop-3 AccuracyTop-5 AccuracyCV MeanCV StdRandom Forest52%96.75%98%57.55%1.95%Decision Tree52%96.75%98%58%0.88%SVM52%98%98.5%58%0.88%
+
+## 🏆 Model Performance
+
+### Summary Table
+
+| Model | Top-1 Accuracy | Top-3 Accuracy | Top-5 Accuracy | CV Mean | CV Std |
+|-------|---------------|----------------|----------------|---------|--------|
+| Random Forest | 52% | 96.75% | 98% | 57.55% | 1.95% |
+| Decision Tree | 52% | 96.75% | 98% | 58% | 0.88% |
+| SVM | 52% | 98% | 98.5% | 58% | 0.88% |
 
 
 
