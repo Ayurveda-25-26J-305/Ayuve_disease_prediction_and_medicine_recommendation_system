@@ -140,32 +140,40 @@ Upload your dataset when prompted
 Run all cells sequentially
 Download the trained model files
 
-🚀 Future Improvements
+## 🚀 Future Improvements
 
- Expand dataset with more patient records
- Include additional features (symptoms, medical history, constitution subtypes)
- Implement ensemble methods combining multiple models
- Add contraindication checking
- Develop web/mobile interface for practitioners
- Include herb interaction warnings
- Multi-label classification for herb combinations
+- [ ] Expand dataset with more patient records
+- [ ] Include additional features (symptoms, medical history, constitution subtypes)
+- [ ] Implement ensemble methods combining multiple models
+- [ ] Add contraindication checking
+- [ ] Develop web/mobile interface for practitioners
+- [ ] Include herb interaction warnings
+- [ ] Multi-label classification for herb combinations
 
-⚕️ Clinical Use Disclaimer
-⚠️ Important: This model is for educational and research purposes. It should not be used as a substitute for professional medical advice, diagnosis, or treatment. Always consult qualified Ayurvedic practitioners or healthcare professionals for medical decisions.
-📄 License
+## ⚕️ Clinical Use Disclaimer
+
+⚠️ **Important**: This model is for educational and research purposes. It should not be used as a substitute for professional medical advice, diagnosis, or treatment. Always consult qualified Ayurvedic practitioners or healthcare professionals for medical decisions.
+
+## 📄 License
+
 This project is open source and available for educational purposes.
-🤝 Contributing
+
+## 🤝 Contributing
+
 Contributions are welcome! Please feel free to submit issues or pull requests for:
+- Model improvements
+- Additional evaluation metrics
+- Documentation enhancements
+- Bug fixes
 
-Model improvements
-Additional evaluation metrics
-Documentation enhancements
-Bug fixes
+## 👥 Authors
 
-👥 Authors
 Machine Learning implementation for Ayurvedic herb recommendation system
-🙏 Acknowledgments
 
-Built using scikit-learn machine learning library
-Based on Ayurvedic medicinal principles
-Dataset structure follows traditional Dosha-based diagnosis
+## 🙏 Acknowledgments
+
+- Built using scikit-learn machine learning library
+- Based on Ayurvedic medicinal principles
+- Dataset structure follows traditional Dosha-based diagnosis
+
+---
