@@ -75,57 +75,63 @@ Amalaki, Ashwagandha, Brahmi, Gudmar, Guggulu, Jatamansi, Neem, Nirgundi, Pippal
 
 
 
-💡 Key Findings
+### 💡 Key Findings
 
-✅ All three models achieve similar Top-1 accuracy (~52%), indicating the complexity of the multi-class classification problem
-🎯 Top-3 accuracy is excellent (>96%), meaning the correct herb is almost always in the top 3 recommendations
-⭐ SVM shows slightly better Top-3 performance (98%) and is the recommended model for deployment
-📊 Cross-validation results show consistent performance across all folds
+- ✅ All three models achieve similar **Top-1 accuracy (~52%)**, indicating the complexity of the multi-class classification problem
+- 🎯 **Top-3 accuracy** is excellent (>96%), meaning the correct herb is almost always in the top 3 recommendations
+- ⭐ **SVM** shows slightly better Top-3 performance (98%) and is the recommended model for deployment
+- 📊 Cross-validation results show consistent performance across all folds
 
-📦 Requirements
-pythonpandas
+## 📦 Requirements
+
+```python
+pandas
 numpy
 matplotlib
 scikit-learn
 joblib
-🚀 Installation
-bashpip install pandas numpy matplotlib scikit-learn joblib
+```
 
-🏗️ Model Architecture
-Preprocessing Pipeline
+## 🚀 Installation
 
-One-Hot Encoding: Converts categorical features into numerical format
-Handles unknown categories gracefully during prediction
+```bash
+pip install pandas numpy matplotlib scikit-learn joblib
+```
 
-Random Forest Configuration
+## 🏗️ Model Architecture
 
-Estimators: 400 trees
-Random State: 42 (for reproducibility)
+### Preprocessing Pipeline
+- **One-Hot Encoding**: Converts categorical features into numerical format
+- Handles unknown categories gracefully during prediction
 
-Decision Tree Configuration
+### Random Forest Configuration
+- **Estimators**: 400 trees
+- **Random State**: 42 (for reproducibility)
 
-Max Depth: 10 (prevents overfitting)
-Random State: 42
+### Decision Tree Configuration
+- **Max Depth**: 10 (prevents overfitting)
+- **Random State**: 42
 
-SVM Configuration
+### SVM Configuration
+- **Kernel**: RBF (Radial Basis Function)
+- **C**: 1.0 (regularization parameter)
+- **Gamma**: scale
+- **Probability**: True (enables probability estimates for Top-K predictions)
 
-Kernel: RBF (Radial Basis Function)
-C: 1.0 (regularization parameter)
-Gamma: scale
-Probability: True (enables probability estimates for Top-K predictions)
+## 📈 Evaluation Metrics
 
-📈 Evaluation Metrics
-Top-K Accuracy
+### Top-K Accuracy
+- **Top-1**: Exact match accuracy
+- **Top-3**: Correct herb is in top 3 predictions
+- **Top-5**: Correct herb is in top 5 predictions
 
-Top-1: Exact match accuracy
-Top-3: Correct herb is in top 3 predictions
-Top-5: Correct herb is in top 5 predictions
+### Cross-Validation
+- **Method**: 5-fold Stratified K-Fold
+- Ensures balanced class distribution in each fold
+- Provides robust performance estimates
 
-Cross-Validation
-
-Method: 5-fold Stratified K-Fold
-Ensures balanced class distribution in each fold
-Provides robust performance estimates
+### Classification Report
+Includes precision, recall, and F1-score for each herb class
 
 🔬 Running in Google Colab
 
