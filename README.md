@@ -43,3 +43,12 @@ This project implements and compares three different machine learning algorithms
 -  **Random Forest Classifier**
 -  **Decision Tree Classifier**
 -  **Support Vector Machine (SVM)** ⭐ *Recommended*
+
+  ✨ Key Features
+
+✅ Multi-class classification for 15 different herbs
+✅ Top-K prediction support (Top-1, Top-3, Top-5)
+✅ Confidence scores for each recommendation
+✅ Cross-validation for robust performance estimation
+✅ Easy-to-use prediction pipeline
+✅ Ready for deployment (.pkl model files)
