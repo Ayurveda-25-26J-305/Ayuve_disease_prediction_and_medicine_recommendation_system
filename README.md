@@ -84,3 +84,76 @@ scikit-learn
 joblib
 🚀 Installation
 bashpip install pandas numpy matplotlib scikit-learn joblib
+
+🏗️ Model Architecture
+Preprocessing Pipeline
+
+One-Hot Encoding: Converts categorical features into numerical format
+Handles unknown categories gracefully during prediction
+
+Random Forest Configuration
+
+Estimators: 400 trees
+Random State: 42 (for reproducibility)
+
+Decision Tree Configuration
+
+Max Depth: 10 (prevents overfitting)
+Random State: 42
+
+SVM Configuration
+
+Kernel: RBF (Radial Basis Function)
+C: 1.0 (regularization parameter)
+Gamma: scale
+Probability: True (enables probability estimates for Top-K predictions)
+
+📈 Evaluation Metrics
+Top-K Accuracy
+
+Top-1: Exact match accuracy
+Top-3: Correct herb is in top 3 predictions
+Top-5: Correct herb is in top 5 predictions
+
+Cross-Validation
+
+Method: 5-fold Stratified K-Fold
+Ensures balanced class distribution in each fold
+Provides robust performance estimates
+
+🔬 Running in Google Colab
+
+Upload the notebook to Google Colab
+Upload your dataset when prompted
+Run all cells sequentially
+Download the trained model files
+
+🚀 Future Improvements
+
+ Expand dataset with more patient records
+ Include additional features (symptoms, medical history, constitution subtypes)
+ Implement ensemble methods combining multiple models
+ Add contraindication checking
+ Develop web/mobile interface for practitioners
+ Include herb interaction warnings
+ Multi-label classification for herb combinations
+
+⚕️ Clinical Use Disclaimer
+⚠️ Important: This model is for educational and research purposes. It should not be used as a substitute for professional medical advice, diagnosis, or treatment. Always consult qualified Ayurvedic practitioners or healthcare professionals for medical decisions.
+📄 License
+This project is open source and available for educational purposes.
+🤝 Contributing
+Contributions are welcome! Please feel free to submit issues or pull requests for:
+
+Model improvements
+Additional evaluation metrics
+Documentation enhancements
+Bug fixes
+
+👥 Authors
+Machine Learning implementation for Ayurvedic herb recommendation system
+🙏 Acknowledgments
+
+Built using scikit-learn machine learning library
+Based on Ayurvedic medicinal principles
+Dataset structure follows traditional Dosha-based diagnosis
