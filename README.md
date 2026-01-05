@@ -52,3 +52,13 @@ This project implements and compares three different machine learning algorithms
 ✅ Cross-validation for robust performance estimation
 ✅ Easy-to-use prediction pipeline
 ✅ Ready for deployment (.pkl model files)
+
+📁 Dataset
+
+Size: 2,000 patient records
+Features: 4 categorical variables
+
+Disease type
+Severity level (Low, Medium, High)
+Dominant Dosha (Vata, Pitta, Kapha)
+Age group (Child, Adult, Elder)
