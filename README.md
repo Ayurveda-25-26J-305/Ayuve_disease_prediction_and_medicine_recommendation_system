@@ -9,11 +9,11 @@ A machine learning system that recommends Ayurvedic herbs based on patient profi
 
 ## 📊 Quick Stats
 
-- 🎯 **Top-1 Accuracy**: 52%
-- 🏆 **Top-3 Accuracy**: 98% (SVM)
-- 📚 **Dataset Size**: 2,000 records
-- 🌿 **Herb Classes**: 15 different Ayurvedic herbs
-- 🤖 **Models Implemented**: 3 (Random Forest, Decision Tree, SVM)
+-  **Top-1 Accuracy**: 52%
+-  **Top-3 Accuracy**: 98% (SVM)
+-  **Dataset Size**: 2,000 records
+-  **Herb Classes**: 15 different Ayurvedic herbs
+-  **Models Implemented**: 3 (Random Forest, Decision Tree, SVM)
 
 ## 📑 Table of Contents
 
@@ -36,4 +36,10 @@ A machine learning system that recommends Ayurvedic herbs based on patient profi
 - [Contributing](#contributing)
 - [License](#license)
 
-## 🎯 Overview
+##  Overview
+
+This project implements and compares three different machine learning algorithms to predict the most suitable Ayurvedic herbs for various health conditions:
+
+-  **Random Forest Classifier**
+-  **Decision Tree Classifier**
+-  **Support Vector Machine (SVM)** ⭐ *Recommended*
