@@ -107,10 +107,6 @@ The Ayuvedic AI Healthcare System is built on four core components that work tog
 **Purpose**: Analyzes symptoms and patient data to predict potential health conditions
 
 **How it Works**:
-- Takes input symptoms, vital signs, and patient history
-- Uses classification algorithms to identify possible diseases
-- Outputs predicted conditions with confidence scores
-- Helps in early detection and diagnosis
 
 **Key Features**:
 - Multi-symptom analysis
@@ -119,9 +115,6 @@ The Ayuvedic AI Healthcare System is built on four core components that work tog
 - Support for both acute and chronic conditions
 
 **Technology Stack**:
-- Machine Learning: Random Forest, Decision Tree, SVM
-- Feature Engineering: Symptom encoding, dosha analysis
-- Output: Disease predictions with probability scores
 
 ---
 
@@ -184,9 +177,7 @@ The Ayuvedic AI Healthcare System is built on four core components that work tog
 **Key Features**:
 - Dosha-specific diet plans
 - Disease-specific nutritional guidance
-- Seasonal food recommendations
 - Food combination principles (Viruddha Ahara)
-- Digestive fire (Agni) optimization
 
 **Recommendation Categories**:
 - ✅ **Foods to Include**: Beneficial ingredients
@@ -307,18 +298,6 @@ User Query/Symptoms
 pip install pandas numpy matplotlib scikit-learn joblib
 ```
 
-
-## 🏗️ Model Architecture
-
-
-
-## 📈 Evaluation Metrics
-
-
-
-## 📂 File Structure
-
-
 ## 🔬 Running in Google Colab
 
 1. Upload the notebook to Google Colab
@@ -342,30 +321,12 @@ pip install pandas numpy matplotlib scikit-learn joblib
 - [ ] Q&A Component
 - [ ] Component integration layer
 
-### Phase 2: Enhancement (Q3 2026)
-- [ ] Expand medicine dataset with more patient records
-- [ ] Include additional features (symptoms, medical history, constitution subtypes)
-- [ ] Implement ensemble methods combining multiple models
-- [ ] Add contraindication checking system
-- [ ] Include herb-herb and herb-drug interaction warnings
-- [ ] Multi-label classification for herb combinations
-- [ ] Enhanced dosha assessment algorithms
 
-### Phase 3: Advanced Features (Q4 2026)
-- [ ] Real-time symptom monitoring integration
-- [ ] Seasonal and regional adjustments
-- [ ] Personalized treatment tracking
-- [ ] Integration with wearable devices
-- [ ] Multilingual support (Sanskrit, Hindi, English)
-- [ ] Telemedicine integration
-
-### Phase 4: Deployment (2027)
+###  Deployment 
 - [ ] Web interface for practitioners
 - [ ] Mobile application (iOS & Android)
 - [ ] REST API for third-party integration
-- [ ] Cloud deployment (AWS/Azure/GCP)
-- [ ] HIPAA compliance implementation
-- [ ] Clinical trial validation
+- 
 
 ## 💡 Use Cases
 
