@@ -136,6 +136,15 @@ The Ayuvedic AI Healthcare System is built on four core components that work tog
 - **Prakriti Assessment:** 15 questions
 - **Classical References:** Charaka Samhita, Sushruta Samhita, Madhava Nidana
 
+  ## 📈 Results
+
+| Metric | Constitutional-Aware | Basic (Symptom-Only) | Improvement |
+|--------|---------------------|---------------------|-------------|
+| Accuracy | 84.2% | 76.8% | +9.6% |
+| Precision | 83.5% | 75.2% | +11.0% |
+| Recall | 84.2% | 76.8% | +9.6% |
+| F1-Score | 83.8% | 75.9% | +10.4% |
+
 ### 2️⃣ Medicine Recommendation Component
 
 **Purpose**: Recommends appropriate Ayuvedic herbs and formulations based on diagnosed conditions
@@ -291,9 +300,9 @@ User Query/Symptoms
 
 | Component | Status | Technology | Accuracy/Performance |
 |-----------|--------|------------|---------------------|
-| 🏥 Disease Prediction | ✅ In Development | ML Classification | TBD |
+| 🏥 Disease Prediction | ✅ In Development | SVM, Random Forest,Neural Networks | TBD |
 | 💊 Medicine Recommendation | ✅ **In Development** | SVM, Random Forest, Decision Tree | TBD |
-| 🍽️ Diet Recommendation | ✅ In Development | Rule-based + ML | TBD |
+| 🍽️ Diet Recommendation | ✅ In Development | SVM, Random Forest| TBD |
 | 💬 Q&A Component | ✅ In Development | NLP, Knowledge Base | TBD |
 
 > **Note**: This repository currently contains the **Medicine Recommendation Component** implementation. Other components are under development and will be integrated in future releases.
