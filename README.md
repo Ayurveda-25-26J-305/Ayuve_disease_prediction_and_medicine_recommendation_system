@@ -1,4 +1,4 @@
-# Ayuvedic AI Healthcare System 🌿
+# Ayuvedic Disease Prediction and Medicine Recommendation system 🌿
 
 ![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.0+-orange.svg)
