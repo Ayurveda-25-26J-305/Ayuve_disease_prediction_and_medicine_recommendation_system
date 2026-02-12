@@ -1,9 +1,6 @@
 # Enhanced Ayurvedic RAG System with Multi-Source Validation & Personalization
 
-
-
 > **Research Component**: Advanced Question-Answering system combining Retrieval-Augmented Generation (RAG) with multi-source validation and Prakriti-based personalization for Ayurvedic knowledge retrieval.
-
 
 ## 🌟 Overview
 
@@ -28,14 +25,14 @@ This system addresses **all three gaps** with novel validation and personalizati
 
 ### Difference from Existing Systems
 
-| Feature | Traditional RAG | **This Enhanced System** |
-|---------|----------------|----------------------|
-| Answer Generation | ✅ Yes | ✅ Yes |
-| Source Citation | ✅ Yes | ✅ Yes |
-| **Confidence Scoring** | ❌ No | ✅ **0-100% validation** |
-| **Contradiction Detection** | ❌ No | ✅ **Cross-source analysis** |
-| **Personalized Recommendations** | ❌ No | ✅ **Dosha-based adaptation** |
-| **Source Agreement Metrics** | ❌ No | ✅ **X/Y sources agree** |
+| Feature                          | Traditional RAG | **This Enhanced System**      |
+| -------------------------------- | --------------- | ----------------------------- |
+| Answer Generation                | ✅ Yes          | ✅ Yes                        |
+| Source Citation                  | ✅ Yes          | ✅ Yes                        |
+| **Confidence Scoring**           | ❌ No           | ✅ **0-100% validation**      |
+| **Contradiction Detection**      | ❌ No           | ✅ **Cross-source analysis**  |
+| **Personalized Recommendations** | ❌ No           | ✅ **Dosha-based adaptation** |
+| **Source Agreement Metrics**     | ❌ No           | ✅ **X/Y sources agree**      |
 
 > **Research Innovation**: First RAG system combining multi-source validation with constitution-based personalization for Ayurvedic QA.
 
@@ -53,6 +50,7 @@ This system addresses **all three gaps** with novel validation and personalizati
 This component introduces two novel features to traditional RAG systems:
 
 ### 1. **Multi-Source Answer Validation Engine** 🔍
+
 - Cross-validates generated answers against multiple retrieved documents
 - Calculates confidence scores (0-100%) based on semantic similarity
 - Detects contradictions across Ayurvedic sources
@@ -60,6 +58,7 @@ This component introduces two novel features to traditional RAG systems:
 - Labels confidence levels: very_low, low, medium, high, very_high
 
 ### 2. **Personalized Answer Refinement Engine** 👤
+
 - Analyzes user constitution (Prakriti) through questionnaire
 - Determines dominant Dosha (Vata, Pitta, Kapha)
 - Adapts answers based on:
@@ -97,19 +96,23 @@ Personalize for User's Dosha → Enhanced Answer
 ## 🧩 Core Components
 
 ### 1. Enhanced RAG (`enhanced_rag_gpu.py`)
+
 Main system integrating all components with GPU optimization.
 
 ### 2. Validation Engine (`validation_engine.py`)
+
 - Calculates confidence scores (0-100%)
 - Detects contradictions (similarity < 0.5)
 - Provides source agreement metrics
 
 ### 3. Personalization Engine (`personalization_engine.py`)
+
 - 10-question Prakriti assessment
 - Dosha-specific recommendations (Vata/Pitta/Kapha)
 - Seasonal and geographic adjustments
 
 ### 4. Vector Database (`vector_db_setup.py`)
+
 - 2,958 documents (2,076 book chunks + 882 QA pairs)
 - FAISS semantic search
 - Sources: Ashtanga Hridaya, Sushruta Samhita, Everyday Ayurveda, etc.
@@ -123,6 +126,7 @@ Main system integrating all components with GPU optimization.
 **See [`COLAB_DEPLOYMENT_GUIDE.md`](COLAB_DEPLOYMENT_GUIDE.md) for complete notebook setup.**
 
 Quick steps:
+
 1. Create new Colab notebook
 2. Install dependencies: `!pip install transformers==4.46.3 torch sentence-transformers faiss-cpu pyyaml`
 3. Upload project files (or mount Google Drive)
@@ -140,6 +144,7 @@ pip install -r requirements.txt
 ```
 
 **Requirements:**
+
 - Python 3.12+
 - GPU with 8GB+ VRAM (for all features simultaneously)
 - Or 4GB VRAM (for individual features)
@@ -160,6 +165,7 @@ python test_combined_features.py
 ```
 
 **Expected Results:**
+
 - ✅ Vector Database: 2,958 documents loaded
 - ✅ LLM Generation: Clean answers (150+ tokens)
 - ✅ Validation: Confidence scores calculated correctly
@@ -169,12 +175,12 @@ python test_combined_features.py
 
 ## 📊 Validation Results
 
-| Metric | Value |
-|--------|-------|
-| Semantic Similarity | 0.783 (GOOD) |
-| Validation Confidence | 93.3% (test case) |
-| Answer Enhancement | 13x (30→411 chars) |
-| Response Time | 6-10 seconds (GPU) |
+| Metric                | Value              |
+| --------------------- | ------------------ |
+| Semantic Similarity   | 0.783 (GOOD)       |
+| Validation Confidence | 93.3% (test case)  |
+| Answer Enhancement    | 13x (30→411 chars) |
+| Response Time         | 6-10 seconds (GPU) |
 
 ---
 
@@ -187,8 +193,8 @@ python test_combined_features.py
 - ✅ Shareable public links (72 hours)
 - ✅ 12-hour session limit
 
-
 **Hardware Requirements:**
+
 - Minimum: 4GB VRAM (features individually)
 - Recommended: 8GB+ VRAM (all features together)
 - Colab T4: 15GB VRAM (optimal)
@@ -237,9 +243,9 @@ python test_combined_features.py
 ![Transformers](https://img.shields.io/badge/Transformers-4.46.3-orange.svg)
 ![Status](https://img.shields.io/badge/status-research-yellow.svg)
 ![Deploy](https://img.shields.io/badge/Deploy-Google%20Colab-yellow.svg)
+
 ---
 
 ## ⚕️ Medical Disclaimer
 
 This system is for **educational and research purposes only**. Not a substitute for professional medical advice. Always consult qualified Ayurvedic practitioners or healthcare professionals.
-

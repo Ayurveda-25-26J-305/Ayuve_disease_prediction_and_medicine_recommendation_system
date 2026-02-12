@@ -1,15 +1,19 @@
 # Ayurvedic RAG System - Google Colab Deployment
+
 # Easy to test and modify in real-time
 
 ## 📋 SETUP INSTRUCTIONS
 
 ### 1. Create New Colab Notebook
+
 - Go to: https://colab.research.google.com
 - File → New notebook
 - Copy cells below into notebook
 
 ### 2. Upload Your Files
+
 Upload these files when prompted:
+
 - enhanced_rag_gpu.py
 - llm_architecture.py
 - validation_engine.py
@@ -24,12 +28,14 @@ Upload these files when prompted:
 ## 🔧 COLAB NOTEBOOK CELLS
 
 ### Cell 1: Check GPU
+
 ```python
 # Run this first to confirm you have GPU
 !nvidia-smi
 ```
 
 ### Cell 2: Install Dependencies
+
 ```python
 !pip install -q transformers==4.46.3
 !pip install -q torch torchvision torchaudio
@@ -42,6 +48,7 @@ print("✅ Dependencies installed")
 ```
 
 ### Cell 3: Upload Project Files
+
 ```python
 from google.colab import files
 import zipfile
@@ -62,6 +69,7 @@ print("✅ All files uploaded")
 ```
 
 ### Cell 4: Initialize System (EDITABLE - Test different configs here)
+
 ```python
 import yaml
 from vector_db_setup import FAISSVectorDB
@@ -93,6 +101,7 @@ print("✅ System ready!")
 ```
 
 ### Cell 5: Create User Profile (EDITABLE - Test different Doshas)
+
 ```python
 # 🔧 CHANGE RESPONSES TO TEST DIFFERENT DOSHAS:
 # A = Vata, B = Pitta, C = Kapha
@@ -112,6 +121,7 @@ print(f"✅ Season: {profile['current_season']}")
 ```
 
 ### Cell 6: Test Single Question (EDITABLE - Test your questions)
+
 ```python
 # 🔧 CHANGE QUESTION HERE:
 question = "What are the benefits of Triphala?"
@@ -148,6 +158,7 @@ for i, cite in enumerate(result['citations'], 1):
 ```
 
 ### Cell 7: Interactive Gradio UI (OPTIONAL)
+
 ```python
 import gradio as gr
 
@@ -159,9 +170,9 @@ def answer_question_ui(question, dosha_type):
         responses = {f'q{i}': 'B' for i in range(1, 11)}
     else:  # Kapha
         responses = {f'q{i}': 'C' for i in range(1, 11)}
-    
+
     profile = rag.create_user_profile('ui_user', responses)
-    
+
     # Get answer
     result = rag.answer_question(
         question=question,
@@ -170,7 +181,7 @@ def answer_question_ui(question, dosha_type):
         user_profile=profile,
         validation_top_k=5
     )
-    
+
     # Format output
     output = f"""
 📝 ANSWER:
@@ -185,7 +196,7 @@ Agreement: {result['validation']['sources_agree']}/{result['validation']['source
 """
     for i, cite in enumerate(result['citations'], 1):
         output += f"\n{i}. {cite['source']}, Chapter {cite['chapter']}"
-    
+
     return output
 
 # Create interface
@@ -209,29 +220,40 @@ demo.launch(share=True)  # ← Creates public link for 72 hours!
 ## 🔧 HOW TO ITERATE:
 
 ### **Testing Answer Quality:**
+
 If answers are too short/long, edit Cell 4:
+
 ```python
 # Change this line:
 max_new_tokens=150,  # Try 100, 200, etc.
 ```
+
 Then: Shift+Enter to re-run Cell 4, then re-run Cell 6
 
 ### **Testing Different Questions:**
+
 Edit Cell 6:
+
 ```python
 question = "How to balance Vata dosha?"  # Change question
 ```
+
 Then: Shift+Enter to re-run only Cell 6
 
 ### **Testing Validation:**
+
 Edit Cell 4:
+
 ```python
 enable_validation=False,  # Disable to test without
 ```
+
 Then: Re-run Cell 4 and Cell 6
 
 ### **Testing Different Files:**
+
 If you modified a Python file locally:
+
 1. Upload new version in Cell 3
 2. Restart runtime (Runtime → Restart runtime)
 3. Re-run all cells
@@ -266,16 +288,19 @@ If you modified a Python file locally:
 ## 💡 PRO TIPS:
 
 **Save Your Work:**
+
 - File → Save to Drive (automatic backups)
 - Download → .ipynb (keep local copy)
 
 **Faster Testing:**
+
 - Don't restart runtime unless necessary
 - Models stay loaded (saves 2-3 minutes)
 - Just re-run changed cells
 
 **Debugging:**
 Add print statements anywhere:
+
 ```python
 print(f"🔍 Generated {len(answer)} characters")
 print(f"🔍 Confidence: {confidence}%")
