@@ -1,0 +1,58 @@
+# ================================
+# Ayurvedic QA System Configuration
+# ================================
+
+# -------------------------------
+# Data Sources
+# -------------------------------
+books_directory: ./data/books
+qa_dataset_path: ./data/Ayurvedic_QA_Dataset.csv
+
+# Optional book name mapping
+book_mapping:
+  ashtanga_hridaya.txt: "Ashtanga Hridaya"
+  sushruta_samhita.txt: "Sushruta Samhita"
+  Ayurvedha_ancient_wisdom_for_modern_life.txt: "Ayurveda Ancient Wisdom"
+  Ayurvedha_food_and_nutritions.txt: "Ayurveda Food and Nutrition"
+  everyday_Ayurvedha.txt: "Everyday Ayurveda"
+  Hela_osu_corpus.txt: "Hela Osu Corpus"
+
+# -------------------------------
+# Text Chunking
+# -------------------------------
+chunk_size: 300
+overlap: 50
+
+# -------------------------------
+# Vector Database
+# -------------------------------
+embedding_model: "BAAI/bge-base-en-v1.5"
+index_path: faiss_index
+load_existing_index: true
+
+# -------------------------------
+# LLM Configuration
+# -------------------------------
+llm_type: local
+
+#  Lightweight & stable model
+llm_model: "microsoft/Phi-3-mini-4k-instruct"
+
+# Generation settings
+max_new_tokens: 64
+
+# -------------------------------
+# RAG Settings
+# -------------------------------
+top_k: 3
+
+# -------------------------------
+# Testing
+# -------------------------------
+run_tests: false
+
+test_questions:
+  - "What causes Vata imbalance?"
+  - "How to treat Pitta disorders?"
+  - "What are the properties of Kapha dosha?"
+  - "What is the role of Agni in digestion?"
