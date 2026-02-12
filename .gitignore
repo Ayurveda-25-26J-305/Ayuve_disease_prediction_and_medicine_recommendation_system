@@ -47,6 +47,7 @@ Thumbs.db
 data/*.txt
 data/*.pdf
 data/*.csv
+!data/Ayurvedic_QA_Dataset.csv
 
 # Test outputs
 test_output/
