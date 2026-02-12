@@ -52,9 +52,10 @@ class LLMArchitecture:
                 **inputs,
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
                 do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                repetition_penalty=1.2,
+                temperature=0.3,  # Lower = more focused, coherent
+                top_p=0.85,  # Slightly more focused
+                top_k=40,  # Add top-k sampling
+                repetition_penalty=1.5,  # Higher = less repetition
                 pad_token_id=self.tokenizer.eos_token_id
             )
 
