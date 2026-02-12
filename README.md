@@ -1,5 +1,10 @@
 # Enhanced Ayurvedic RAG System with Multi-Source Validation & Personalization
 
+![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
+![Transformers](https://img.shields.io/badge/Transformers-4.46.3-orange.svg)
+![Status](https://img.shields.io/badge/status-research-yellow.svg)
+![Deploy](https://img.shields.io/badge/Deploy-Google%20Colab-yellow.svg)
+
 > **Research Component**: Advanced Question-Answering system combining Retrieval-Augmented Generation (RAG) with multi-source validation and Prakriti-based personalization for Ayurvedic knowledge retrieval.
 
 ## 🌟 Overview
@@ -239,10 +244,6 @@ python test_combined_features.py
 }
 ```
 
-![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
-![Transformers](https://img.shields.io/badge/Transformers-4.46.3-orange.svg)
-![Status](https://img.shields.io/badge/status-research-yellow.svg)
-![Deploy](https://img.shields.io/badge/Deploy-Google%20Colab-yellow.svg)
 
 ---
 
