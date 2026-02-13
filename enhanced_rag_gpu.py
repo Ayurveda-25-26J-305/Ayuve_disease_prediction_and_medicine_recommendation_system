@@ -101,11 +101,13 @@ Paragraph: {paragraph}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Ultra-simple prompt for Phi-3
-        prompt = f"""Context: {context_text}
+        # Use Phi-3's chat format properly
+        context_summary = context_text[:1500]  # Limit context
+        prompt = f"""<|system|>You are a medical expert in Ayurveda. Provide factual answers based only on the given context.<|end|>
+<|user|>Context: {context_summary}
 
-Question: {question}
-Answer in 2-3 clear sentences:"""
+Question: {question}<|end|>
+<|assistant|>"""
         
 
         # Generate answer

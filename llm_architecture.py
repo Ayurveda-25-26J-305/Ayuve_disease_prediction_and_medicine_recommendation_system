@@ -51,12 +51,13 @@ class LLMArchitecture:
             output_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                do_sample=True,
-                temperature=0.3,  # Lower = more focused, coherent
-                top_p=0.85,  # Slightly more focused
-                top_k=40,  # Add top-k sampling
-                repetition_penalty=1.5,  # Higher = less repetition
-                pad_token_id=self.tokenizer.eos_token_id
+                do_sample=False,  # Use greedy decoding for more factual answers
+                temperature=None,  # Not used with greedy
+                top_p=None,  # Not used with greedy
+                top_k=None,
+                repetition_penalty=1.1,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id
             )
 
         # Decode only the newly generated tokens (excluding the input prompt)
@@ -75,6 +76,11 @@ class LLMArchitecture:
         answer = re.sub(r'([.!?,;:])([A-Z])', r'\1 \2', answer)
         # Fix compressed words (add space between lowercase and uppercase)
         answer = re.sub(r'([a-z])([A-Z])', r'\1 \2', answer)
+        
+        # Remove Phi-3 special tokens if present
+        for token in ['<|system|>', '<|user|>', '<|assistant|>', '<|end|>']:
+            answer = answer.replace(token, '')
+        answer = answer.strip()
         
         # Clean up any remaining artifacts
         # Remove source citations if they appear
