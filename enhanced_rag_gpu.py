@@ -109,12 +109,13 @@ Paragraph: {paragraph}
         question_length = len(question)
         
         # Estimate tokens needed: longer context/question = more tokens
+        # Higher limits to accommodate personalization (~100 extra tokens)
         if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 250
+            dynamic_tokens = 350
         elif context_length > 1000:
-            dynamic_tokens = 200
+            dynamic_tokens = 250
         else:
-            dynamic_tokens = 150
+            dynamic_tokens = 200
             
         print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
