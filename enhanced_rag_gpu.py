@@ -109,13 +109,13 @@ Paragraph: {paragraph}
         question_length = len(question)
         
         # Estimate tokens needed: longer context/question = more tokens
-        # Higher limits to accommodate detailed answers + personalization
+        # Adjusted for concise answers + personalization
         if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 400
+            dynamic_tokens = 400  # Brief answer + personalization
         elif context_length > 1000:
-            dynamic_tokens = 300
+            dynamic_tokens = 350  # Medium answer + personalization
         else:
-            dynamic_tokens = 250
+            dynamic_tokens = 300  # Short answer + personalization
             
         print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
@@ -126,7 +126,7 @@ Paragraph: {paragraph}
         
         # Use Phi-3's chat format properly
         context_summary = context_text[:1500]  # Limit context
-        prompt = f"""<|system|>You are a medical expert in Ayurveda. Provide factual answers based only on the given context.<|end|>
+        prompt = f"""<|system|>You are a medical expert in Ayurveda. Provide brief, summarized answers (3-5 key points) based on the context. Avoid exhaustive lists. Focus on the most important benefits or information.<|end|>
 <|user|>Context: {context_summary}
 
 Question: {question}<|end|>

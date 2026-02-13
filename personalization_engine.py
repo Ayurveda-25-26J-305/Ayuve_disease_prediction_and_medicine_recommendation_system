@@ -317,7 +317,7 @@ Add 2-3 sentence personalized tip specifically for {dominant_dosha.capitalize()}
 <|assistant|>"""
         
         try:
-            personalized_tip = self.llm_generator.generate(personalization_prompt, max_new_tokens=150)
+            personalized_tip = self.llm_generator.generate(personalization_prompt, max_new_tokens=200)
             # Clean up
             personalized_tip = personalized_tip.strip()
             for token in ['<|system|>', '<|user|>', '<|assistant|>', '<|end|>']:
