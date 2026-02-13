@@ -101,14 +101,14 @@ Paragraph: {paragraph}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        prompt = f"""Based on the following Ayurvedic sources, answer the question.
+        # Simplified prompt for better generation
+        prompt = f"""You are an Ayurvedic medicine expert. Answer the question using the information provided.
+
+{context_text}
 
 Question: {question}
 
-Context from Ayurvedic texts:
-{context_text}
-
-Answer:"""
+Provide a clear, detailed answer in 2-3 sentences:"""
         
 
         # Generate answer
