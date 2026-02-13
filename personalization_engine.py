@@ -284,23 +284,49 @@ User Profile:
         question: str = ""
     ) -> str:
         """
-        Personalize a generic answer for user's constitution
-        
-        Args:
-            base_answer: Original generic answer
-            user_profile: User profile with Prakriti info
-            question: Original question (optional, helps with context)
-            
-        Returns:
-            Personalized answer
+        Personalize answer with LLM-generated seasonal tips
         """
         dominant_dosha = user_profile['dominant_dosha']
         season = user_profile.get('current_season', 'spring')
         
-        # USE TEMPLATE-BASED PERSONALIZATION (faster and more reliable)
-        # LLM-based personalization is too slow and has device issues
-        print("✨ Using template-based personalization (fast & reliable)")
-        return self._fallback_personalization(base_answer, user_profile)
+        # Generate dynamic personalization using LLM
+        print("✨ Generating personalized tips...")
+        return self._llm_based_personalization(base_answer, user_profile, question)
+    
+    def _llm_based_personalization(
+        self,
+        base_answer: str,
+        user_profile: Dict[str, Any],
+        question: str
+    ) -> str:
+        """
+        LLM-generated personalization based on question context
+        """
+        dominant_dosha = user_profile['dominant_dosha']
+        season = user_profile.get('current_season', 'spring')
+        
+        # Generate context-aware personalization prompt
+        personalization_prompt = f"""<|system|>You are an Ayurvedic expert. Add brief personalized tips for this specific question.<|end|>
+<|user|>Base Answer: {base_answer[:500]}
+
+Question Context: {question}
+User Constitution: {dominant_dosha.capitalize()}
+Current Season: {season.capitalize()}
+
+Add 2-3 sentence personalized tip specifically for {dominant_dosha.capitalize()} constitution related to this question. Be concise and relevant to the question asked.<|end|>
+<|assistant|>"""
+        
+        try:
+            personalized_tip = self.llm_generator.generate(personalization_prompt, max_new_tokens=100)
+            # Clean up
+            personalized_tip = personalized_tip.strip()
+            for token in ['<|system|>', '<|user|>', '<|assistant|>', '<|end|>']:
+                personalized_tip = personalized_tip.replace(token, '')
+            
+            return f"{base_answer}\n\n**Personalized for {dominant_dosha.capitalize()} Constitution:**\n{personalized_tip}"
+        except:
+            # Fallback to template if LLM fails
+            return self._fallback_personalization(base_answer, user_profile)
     
     def _fallback_personalization(
         self, 

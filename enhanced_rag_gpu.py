@@ -88,13 +88,35 @@ Paragraph: {paragraph}
         """Answer question with validation and personalization"""
         logger.info(f"Processing question: {question[:50]}...")
         
-        # Retrieve documents
+        # Retrieve documents with similarity scores
         print("🔍 Retrieving relevant sources...")
         retrieved_docs = vector_db.search(question, top_k=validation_top_k)
+        
+        # Add similarity percentages to docs
+        for i, doc in enumerate(retrieved_docs):
+            if 'similarity' in doc:
+                doc['similarity_percentage'] = round(doc['similarity'] * 100, 1)
+            else:
+                # Estimate based on ranking
+                doc['similarity_percentage'] = round((1 - i * 0.1) * 100, 1)
         
         book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
         citation_docs = book_docs if book_docs else retrieved_docs
         top_context_docs = citation_docs[:top_k]
+        
+        # Dynamic token calculation
+        context_length = sum(len(d.get("text", "")) for d in top_context_docs)
+        question_length = len(question)
+        
+        # Estimate tokens needed: longer context/question = more tokens
+        if context_length > 2000 or question_length > 100:
+            dynamic_tokens = 250
+        elif context_length > 1000:
+            dynamic_tokens = 200
+        else:
+            dynamic_tokens = 150
+            
+        print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -110,9 +132,9 @@ Question: {question}<|end|>
 <|assistant|>"""
         
 
-        # Generate answer
+        # Generate answer with dynamic token adjustment
         print("💭 Generating answer...")
-        base_answer = self.llm.generate(prompt, max_new_tokens=64)
+        base_answer = self.llm.generate(prompt, max_new_tokens=dynamic_tokens)
         
         # Validate
         validation_result = None
@@ -137,7 +159,7 @@ Question: {question}<|end|>
             )
             is_personalized = True
         
-        # Format response
+        # Format response with similarity percentages
         formatted_citations = []
         for doc in top_context_docs:
             meta = doc.get("metadata", {})
@@ -145,6 +167,7 @@ Question: {question}<|end|>
                 "source": doc.get("source", "Unknown"),
                 "chapter": meta.get("chapter", "N/A"),
                 "paragraph": meta.get("paragraph", "N/A"),
+                "similarity_percentage": doc.get("similarity_percentage", 0.0),
                 "text_preview": doc.get("text", "")[:100] + "..."
             }
             formatted_citations.append(citation)
