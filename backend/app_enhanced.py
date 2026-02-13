@@ -14,7 +14,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vector_db_setup import FAISSVectorDB
-from enhanced_rag import EnhancedAyurvedicRAG
+from enhanced_rag_gpu import EnhancedAyurvedicRAG  # Use GPU version with new features
 from personalization_engine import PRAKRITI_QUESTIONS
 import yaml
 
@@ -97,12 +97,14 @@ def format_citation(source_doc, validation_info=None):
     book = source_doc.get("source", "Unknown")
     chapter = metadata.get("chapter", "N/A")
     paragraph = metadata.get("paragraph", metadata.get("verse", "N/A"))
+    similarity_percentage = source_doc.get("similarity_percentage", 0.0)
     
     citation = {
         "book": book,
         "chapter": str(chapter),
         "paragraph": str(paragraph),
-        "formatted": f"{book} – Chapter {chapter} – Paragraph {paragraph}"
+        "similarity_percentage": similarity_percentage,
+        "formatted": f"{book} – Chapter {chapter} – Paragraph {paragraph} ({similarity_percentage}% match)"
     }
     
     # Add validation info if provided
