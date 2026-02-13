@@ -65,8 +65,16 @@ class LLMArchitecture:
         
         answer = self.tokenizer.decode(
             generated_ids,
-            skip_special_tokens=True
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True  # Add this to fix spacing
         ).strip()
+        
+        # Fix common spacing issues
+        import re
+        # Add space after punctuation if missing
+        answer = re.sub(r'([.!?,;:])([A-Z])', r'\1 \2', answer)
+        # Fix compressed words (add space between lowercase and uppercase)
+        answer = re.sub(r'([a-z])([A-Z])', r'\1 \2', answer)
         
         # Clean up any remaining artifacts
         # Remove source citations if they appear

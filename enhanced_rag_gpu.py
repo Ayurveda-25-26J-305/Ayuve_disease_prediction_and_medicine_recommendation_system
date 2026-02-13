@@ -101,14 +101,11 @@ Paragraph: {paragraph}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Simplified prompt for better generation
-        prompt = f"""You are an Ayurvedic medicine expert. Answer the question using the information provided.
-
-{context_text}
+        # Ultra-simple prompt for Phi-3
+        prompt = f"""Context: {context_text}
 
 Question: {question}
-
-Provide a clear, detailed answer in 2-3 sentences:"""
+Answer in 2-3 clear sentences:"""
         
 
         # Generate answer
