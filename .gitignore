@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Model Cache (LLM models are too large for GitHub)
+.cache/
+models/
+*.bin
+*.safetensors
+
+# FAISS Index (can be regenerated)
+faiss_index/
+
+# User Data
+user_profiles/
+*.json
+!requirements.txt
+
+# Backup Files
+*.backup
+*.bak
+*.tmp
+
+# System Files
+.DS_Store
+Thumbs.db
+*.log
+
+# Data Files (if large)
+data/*.txt
+data/*.pdf
+data/*.csv
+!data/Ayurvedic_QA_Dataset.csv
+
+# Test outputs
+test_output/
+output/
