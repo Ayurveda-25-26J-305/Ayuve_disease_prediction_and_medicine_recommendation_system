@@ -71,7 +71,8 @@ class LLMArchitecture:
                 top_k=None,
                 repetition_penalty=1.1,
                 pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id
+                eos_token_id=self.tokenizer.eos_token_id,
+                use_cache=False  # Disable cache to avoid DynamicCache compatibility issues
             )
 
         # Decode only the newly generated tokens (excluding the input prompt)
