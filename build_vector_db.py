@@ -22,7 +22,8 @@ def build_complete_database():
     )
     
     # Initialize processors
-    book_processor = BookProcessor(chunk_size=300, overlap=50)
+    text_chunker = TextChunker(chunk_size=300, overlap=50)
+    book_processor = BookProcessor(chunker=text_chunker)
     qa_processor = QADatasetProcessor()
     
     all_documents = []
