@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,21 @@ class LLMArchitecture:
             trust_remote_code=True
         )
 
+        # Load config and fix rope_scaling issue for Phi-3
+        model_config = AutoConfig.from_pretrained(
+            model_name,
+            trust_remote_code=True
+        )
+        
+        # Fix rope_scaling configuration if present
+        if hasattr(model_config, 'rope_scaling') and model_config.rope_scaling is not None:
+            if isinstance(model_config.rope_scaling, dict) and 'type' not in model_config.rope_scaling:
+                # Set default rope scaling type
+                model_config.rope_scaling['type'] = 'default'
+        
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
+            config=model_config,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else None,
             low_cpu_mem_usage=True,
