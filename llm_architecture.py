@@ -31,11 +31,12 @@ class LLMArchitecture:
             trust_remote_code=True
         )
         
-        # Fix rope_scaling configuration if present
+        # Fix rope_scaling configuration if present - disable it if misconfigured
         if hasattr(model_config, 'rope_scaling') and model_config.rope_scaling is not None:
             if isinstance(model_config.rope_scaling, dict) and 'type' not in model_config.rope_scaling:
-                # Set default rope scaling type
-                model_config.rope_scaling['type'] = 'default'
+                # Disable rope_scaling if it doesn't have a valid type
+                model_config.rope_scaling = None
+                logger.info("Disabled misconfigured rope_scaling")
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
