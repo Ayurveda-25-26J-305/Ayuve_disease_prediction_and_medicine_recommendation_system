@@ -88,20 +88,33 @@ export default function Home() {
         body: JSON.stringify({ question }),
       });
 
+      console.log("Response status:", response.status);
+      console.log("Response OK:", response.ok);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
       console.log("Backend response:", data);
+      console.log("Data type:", typeof data);
+      console.log("Success field:", data.success);
+      console.log("Answer field:", data.answer);
+      console.log("Citations field:", data.citations);
 
       if (data.success) {
         console.log("Setting answer:", data.answer);
+        console.log("Citations:", data.citations);
         setMessages((prev) => [
           ...prev,
           {
             type: "answer",
-            content: data.answer,
-            citations: data.citations,
+            content: data.answer || "No answer received",
+            citations: data.citations || [],
           },
         ]);
       } else {
+        console.error("Backend returned success=false:", data);
         setMessages((prev) => [
           ...prev,
           {
@@ -111,6 +124,7 @@ export default function Home() {
         ]);
       }
     } catch (error) {
+      console.error("Error in askQuestion:", error);
       setMessages((prev) => [
         ...prev,
         {
@@ -121,6 +135,7 @@ export default function Home() {
       ]);
     }
 
+    console.log("Setting loading to false");
     setLoading(false);
   };
 
