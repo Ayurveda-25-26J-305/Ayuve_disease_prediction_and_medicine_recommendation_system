@@ -50,7 +50,7 @@ export default function Home() {
       console.log("Stats response status:", response.status);
       const data = await response.json();
       console.log("Stats data received:", data);
-      
+
       if (data.success) {
         setStats({
           docCount: data.stats.total_documents.toLocaleString(),
