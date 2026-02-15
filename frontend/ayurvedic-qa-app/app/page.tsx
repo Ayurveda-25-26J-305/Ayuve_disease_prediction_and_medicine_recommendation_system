@@ -38,15 +38,28 @@ export default function Home() {
 
   const loadStats = async () => {
     try {
+      console.log("Fetching stats from:", `${API_BASE_URL}/api/stats`);
       const response = await fetch(`${API_BASE_URL}/api/stats`, {
-        headers: { "Bypass-Tunnel-Reminder": "true" },
+        mode: "cors",
+        credentials: "include",
+        headers: {
+          "Bypass-Tunnel-Reminder": "true",
+          "ngrok-skip-browser-warning": "true",
+        },
       });
+      console.log("Stats response status:", response.status);
       const data = await response.json();
+      console.log("Stats data received:", data);
+      
       if (data.success) {
         setStats({
           docCount: data.stats.total_documents.toLocaleString(),
           modelName: data.stats.model.split("/").pop(),
         });
+        console.log("Stats updated successfully");
+      } else {
+        console.error("Stats API returned success=false:", data);
+        setStats({ docCount: "Error", modelName: "Error" });
       }
     } catch (error) {
       console.error("Failed to load stats:", error);
@@ -65,9 +78,12 @@ export default function Home() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/ask`, {
         method: "POST",
+        mode: "cors",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Bypass-Tunnel-Reminder": "true",
+          "ngrok-skip-browser-warning": "true",
         },
         body: JSON.stringify({ question }),
       });

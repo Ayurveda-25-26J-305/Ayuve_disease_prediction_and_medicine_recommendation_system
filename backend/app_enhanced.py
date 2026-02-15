@@ -19,7 +19,13 @@ from personalization_engine import PRAKRITI_QUESTIONS
 import yaml
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend
+# Enable CORS for frontend with credentials support
+CORS(app, resources={r"/*": {
+    "origins": ["http://localhost:3000", "http://localhost:3001"],
+    "methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Bypass-Tunnel-Reminder", "ngrok-skip-browser-warning"],
+    "supports_credentials": True
+}})
 
 # Global variables for system components
 vector_db = None
