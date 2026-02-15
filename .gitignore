@@ -43,11 +43,11 @@ user_profiles/
 Thumbs.db
 *.log
 
-# Data Files (if large)
-data/*.txt
-data/*.pdf
-data/*.csv
-!data/Ayurvedic_QA_Dataset.csv
+# Data Files (books and QA dataset needed for system)
+# Allow all data files to be committed
+!data/**/*.txt
+!data/**/*.csv
+!data/**/*.pdf
 
 # Test outputs
 test_output/
