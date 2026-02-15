@@ -208,8 +208,9 @@ def ask_question():
         print(f"  Confidence: {response['validation']['confidence']}%")
         print(f"  Personalized: {response['personalized']}")
         print(f"  Citations: {len(citations)}")
+        print(f"  Answer preview: {response['answer'][:100]}...")
         
-        return jsonify({
+        result = {
             "success": True,
             "answer": response['answer'],
             "base_answer": response.get('base_answer', ''),  # For comparison
@@ -218,7 +219,13 @@ def ask_question():
             "validation": response.get('validation', {}),
             "personalized": response['personalized'],
             "user_info": response.get('user_info', {})
-        })
+        }
+        
+        print(f"  Response keys: {list(result.keys())}")
+        print(f"  Answer length: {len(result['answer'])}")
+        print(f"  Citations count: {len(result['citations'])}")
+        
+        return jsonify(result)
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")

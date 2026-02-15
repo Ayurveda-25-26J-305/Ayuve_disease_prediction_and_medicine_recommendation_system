@@ -137,6 +137,14 @@ Question: {question}<|end|>
         print("💭 Generating answer...")
         base_answer = self.llm.generate(prompt, max_new_tokens=dynamic_tokens)
         
+        print(f"✅ Generation complete!")
+        print(f"   Answer length: {len(base_answer)} chars")
+        print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
+        
+        if not base_answer or len(base_answer.strip()) < 10:
+            print("⚠️  WARNING: Generated answer is empty or too short!")
+            print(f"   Prompt used: {prompt[:500]}...")
+        
         # Validate
         validation_result = None
         if self.enable_validation and self.validator:
