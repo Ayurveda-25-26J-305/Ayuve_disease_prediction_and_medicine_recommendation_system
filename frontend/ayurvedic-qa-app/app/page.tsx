@@ -266,8 +266,18 @@ function MessageComponent({ message }: { message: Message }) {
         <div>{message.content}</div>
 
         {message.validation && (
-          <div className="validation-info" style={{marginTop: '10px', padding: '8px', backgroundColor: '#f0f9f4', borderRadius: '6px', fontSize: '0.9em'}}>
-            <strong>🎯 Confidence: {message.validation.confidence}%</strong> ({message.validation.confidence_level})
+          <div
+            className="validation-info"
+            style={{
+              marginTop: "10px",
+              padding: "8px",
+              backgroundColor: "#f0f9f4",
+              borderRadius: "6px",
+              fontSize: "0.9em",
+            }}
+          >
+            <strong>🎯 Confidence: {message.validation.confidence}%</strong> (
+            {message.validation.confidence_level})
           </div>
         )}
 
@@ -279,7 +289,13 @@ function MessageComponent({ message }: { message: Message }) {
                 <span className="citation-book">{citation.book}</span> – Chapter{" "}
                 {citation.chapter} – Paragraph {citation.paragraph}
                 {citation.similarity_percentage && (
-                  <span style={{marginLeft: '8px', color: '#059669', fontWeight: '600'}}>
+                  <span
+                    style={{
+                      marginLeft: "8px",
+                      color: "#059669",
+                      fontWeight: "600",
+                    }}
+                  >
                     ({citation.similarity_percentage}% match)
                   </span>
                 )}
