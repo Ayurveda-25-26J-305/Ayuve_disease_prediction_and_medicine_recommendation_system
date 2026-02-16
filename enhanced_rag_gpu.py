@@ -121,17 +121,17 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Dynamic token calculation
+        # Dynamic token calculation - increased for complete answers
         context_length = sum(len(d.get("text", "")) for d in top_context_docs)
         question_length = len(question)
         
-        # Shorter tokens for clear, summarized answers
+        # Adjusted tokens to ensure complete, summarized answers
         if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 250  # Brief summary
+            dynamic_tokens = 350  # Complete detailed summary
         elif context_length > 1000:
-            dynamic_tokens = 200  # Concise summary
+            dynamic_tokens = 300  # Complete moderate summary
         else:
-            dynamic_tokens = 150  # Very concise
+            dynamic_tokens = 250  # Complete brief summary
             
         print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
@@ -141,14 +141,19 @@ Related Question: {question}
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
         # Use Phi-3's chat format properly
-        context_summary = context_text[:2000]  # Limit context for focused answers
-        prompt = f"""<|system|>You are an Ayurvedic expert. Provide a clear, concise answer with 3-5 key points. Each point should be a complete sentence. Separate points with periods.<|end|>
+        context_summary = context_text[:2500]  # Increased context for better answers
+        prompt = f"""<|system|>You are an Ayurvedic expert. Answer in a clear, summarized format:
+- Use 3-5 complete points
+- Each point should be one clear sentence (15-25 words)
+- Focus on essential information only
+- Avoid repetition and filler words
+- Be direct and specific<|end|>
 <|user|>Ayurvedic Knowledge:
 {context_summary}
 
 Question: {question}
 
-Provide 3-5 key points about this topic:<|end|>
+Provide a summarized answer with key points:<|end|>
 <|assistant|>"""
         
 

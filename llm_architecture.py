@@ -79,7 +79,7 @@ class LLMArchitecture:
                 print(f"⚠️  Cache error, retrying without cache: {e}")
                 output_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=min(max_new_tokens or 64, 400),  # Limit tokens for better quality
+                    max_new_tokens=max_new_tokens or 64,  # Use requested tokens
                     do_sample=False,  # Greedy for coherent output
                     repetition_penalty=1.25,
                     no_repeat_ngram_size=4,
