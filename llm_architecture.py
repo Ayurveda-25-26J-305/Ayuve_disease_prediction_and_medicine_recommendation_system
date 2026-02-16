@@ -56,7 +56,7 @@ class LLMArchitecture:
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=1024
+            max_length=2048  # Increased for longer context
         ).to(self.device)
 
         print(" Generating response...")
@@ -65,14 +65,12 @@ class LLMArchitecture:
             output_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                do_sample=False,  # Use greedy decoding for more factual answers
-                temperature=None,  # Not used with greedy
-                top_p=None,  # Not used with greedy
-                top_k=None,
-                repetition_penalty=1.1,
+                do_sample=False,  # Use greedy decoding
+                repetition_penalty=1.2,  # Increased to prevent repetition
+                no_repeat_ngram_size=3,  # Prevent repeating 3-grams
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=False  # Disable cache to avoid DynamicCache compatibility issues
+                use_cache=True  # Enable cache for coherent generation
             )
 
         # Decode only the newly generated tokens (excluding the input prompt)
