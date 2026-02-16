@@ -64,15 +64,27 @@ class EnhancedAyurvedicRAG:
         for i, doc in enumerate(docs, 1):
             meta = doc.get("metadata", {})
             book = doc.get("source", "Unknown Book")
-            chapter = meta.get("chapter", "N/A")
-            paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
+            doc_type = doc.get("type", "unknown")
             
-            block = f"""[Source {i}]
+            # Handle book vs QA sources differently
+            if doc_type == "book":
+                chapter = meta.get("chapter", "N/A")
+                paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
+                block = f"""[Source {i}]
 Book: {book}
 Chapter: {chapter}
-Paragraph: {paragraph}
+Verse/Paragraph: {paragraph}
 
 {doc.get("text", "")}"""
+            else:
+                # QA dataset entry
+                question = meta.get("question", "N/A")
+                block = f"""[Source {i}]
+Type: Ayurvedic Q&A Reference
+Related Question: {question}
+
+{doc.get("text", "")}"""
+            
             context_blocks.append(block.strip())
         
         return "\n\n".join(context_blocks)
@@ -88,21 +100,26 @@ Paragraph: {paragraph}
         """Answer question with validation and personalization"""
         logger.info(f"Processing question: {question[:50]}...")
         
-        # Retrieve documents with similarity scores
+        # Retrieve documents with similarity scores (prefer book sources)
         print("🔍 Retrieving relevant sources...")
-        retrieved_docs = vector_db.search(question, top_k=validation_top_k)
+        retrieved_docs = vector_db.search(question, top_k=validation_top_k, prefer_books=True)
         
-        # Add similarity percentages to docs
-        for i, doc in enumerate(retrieved_docs):
+        # Ensure we have book sources for better citations
+        book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
+        qa_docs = [d for d in retrieved_docs if d.get("type") == "qa"]
+        
+        # Add similarity percentages
+        for doc in retrieved_docs:
             if 'similarity' in doc:
                 doc['similarity_percentage'] = round(doc['similarity'] * 100, 1)
-            else:
-                # Estimate based on ranking
-                doc['similarity_percentage'] = round((1 - i * 0.1) * 100, 1)
         
-        book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
-        citation_docs = book_docs if book_docs else retrieved_docs
-        top_context_docs = citation_docs[:top_k]
+        # Prefer book sources for context, but include QA if relevant
+        if book_docs:
+            top_context_docs = book_docs[:top_k]
+            print(f"📚 Using {len(top_context_docs)} book sources")
+        else:
+            top_context_docs = retrieved_docs[:top_k]
+            print(f"⚠️  No book sources found, using QA entries")
         
         # Dynamic token calculation
         context_length = sum(len(d.get("text", "")) for d in top_context_docs)
@@ -174,13 +191,24 @@ Provide 3-5 key points about this topic:<|end|>
         formatted_citations = []
         for doc in top_context_docs:
             meta = doc.get("metadata", {})
+            doc_type = doc.get("type", "unknown")
+            
             citation = {
                 "source": doc.get("source", "Unknown"),
-                "chapter": meta.get("chapter", "N/A"),
-                "paragraph": meta.get("paragraph", "N/A"),
+                "type": doc_type,
                 "similarity_percentage": doc.get("similarity_percentage", 0.0),
                 "text_preview": doc.get("text", "")[:100] + "..."
             }
+            
+            # Add type-specific fields
+            if doc_type == "book":
+                citation["chapter"] = meta.get("chapter", "N/A")
+                citation["paragraph"] = meta.get("paragraph", "N/A")
+            else:
+                # QA entry
+                citation["qa_id"] = meta.get("question_id", "N/A")
+                citation["related_question"] = meta.get("question", "N/A")
+            
             formatted_citations.append(citation)
         
         response = {

@@ -94,24 +94,37 @@ def initialize_system():
 def format_citation(source_doc, validation_info=None):
     """
     Format citation for frontend display with validation info
+    Handles both book sources and QA dataset entries
     
     Args:
         source_doc: Source document dictionary
         validation_info: Optional validation info for this source
     """
     metadata = source_doc.get("metadata", {})
-    book = source_doc.get("source", "Unknown")
-    chapter = metadata.get("chapter", "N/A")
-    paragraph = metadata.get("paragraph", metadata.get("verse", "N/A"))
+    source_name = source_doc.get("source", "Unknown")
+    doc_type = source_doc.get("type", "unknown")
     similarity_percentage = source_doc.get("similarity_percentage", 0.0)
     
     citation = {
-        "book": book,
-        "chapter": str(chapter),
-        "paragraph": str(paragraph),
-        "similarity_percentage": similarity_percentage,
-        "formatted": f"{book} – Chapter {chapter} – Paragraph {paragraph} ({similarity_percentage}% match)"
+        "source": source_name,
+        "type": doc_type,
+        "similarity_percentage": similarity_percentage
     }
+    
+    # Add type-specific fields
+    if doc_type == "book":
+        chapter = metadata.get("chapter", "N/A")
+        paragraph = metadata.get("paragraph", metadata.get("verse", "N/A"))
+        citation["chapter"] = str(chapter)
+        citation["paragraph"] = str(paragraph)
+        citation["formatted"] = f"{source_name} – Chapter {chapter} – Verse/Paragraph {paragraph} ({similarity_percentage}% match)"
+    else:
+        # QA dataset entry
+        qa_id = metadata.get("question_id", "N/A")
+        related_question = metadata.get("question", "N/A")
+        citation["qa_id"] = str(qa_id)
+        citation["related_question"] = related_question
+        citation["formatted"] = f"{source_name} – Q&A #{qa_id} ({similarity_percentage}% match)"
     
     # Add validation info if provided
     if validation_info:

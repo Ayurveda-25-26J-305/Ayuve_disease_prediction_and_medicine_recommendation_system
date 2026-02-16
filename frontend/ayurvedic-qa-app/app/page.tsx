@@ -15,10 +15,13 @@ interface Message {
 }
 
 interface Citation {
-  book: string;
-  chapter: string;
-  paragraph: string;
-  formatted: string;
+  source: string;
+  type?: string;
+  chapter?: string;
+  paragraph?: string;
+  qa_id?: string;
+  related_question?: string;
+  formatted?: string;
   similarity_percentage?: number;
 }
 
@@ -411,31 +414,61 @@ function MessageComponent({ message }: { message: Message }) {
                         marginBottom: "4px",
                       }}
                     >
-                      {citation.book}
+                      {citation.source}
                     </div>
-                    <div
-                      style={{
-                        color: "#6b7280",
-                        fontSize: "0.9em",
-                      }}
-                    >
-                      Chapter {citation.chapter} • Paragraph{" "}
-                      {citation.paragraph}
-                      {citation.similarity_percentage && (
-                        <span
-                          style={{
-                            marginLeft: "12px",
-                            color: "#059669",
-                            fontWeight: "600",
-                            backgroundColor: "#d1fae5",
-                            padding: "2px 8px",
-                            borderRadius: "12px",
-                          }}
-                        >
-                          {citation.similarity_percentage}% match
-                        </span>
-                      )}
-                    </div>
+                    {citation.type === "book" ? (
+                      <div
+                        style={{
+                          color: "#6b7280",
+                          fontSize: "0.9em",
+                        }}
+                      >
+                        Chapter {citation.chapter} • Verse/Paragraph {citation.paragraph}
+                        {citation.similarity_percentage && (
+                          <span
+                            style={{
+                              marginLeft: "12px",
+                              color: "#059669",
+                              fontWeight: "600",
+                              backgroundColor: "#d1fae5",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                            }}
+                          >
+                            {citation.similarity_percentage}% match
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          color: "#6b7280",
+                          fontSize: "0.9em",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Q&A Reference
+                        {citation.related_question && (
+                          <span style={{ display: "block", marginTop: "4px", fontSize: "0.85em" }}>
+                            Related: {citation.related_question.substring(0, 80)}{citation.related_question.length > 80 ? "..." : ""}
+                          </span>
+                        )}
+                        {citation.similarity_percentage && (
+                          <span
+                            style={{
+                              marginLeft: "8px",
+                              color: "#059669",
+                              fontWeight: "600",
+                              backgroundColor: "#d1fae5",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                            }}
+                          >
+                            {citation.similarity_percentage}% match
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

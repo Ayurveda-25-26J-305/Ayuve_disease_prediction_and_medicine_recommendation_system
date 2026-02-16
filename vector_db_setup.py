@@ -95,16 +95,17 @@ class FAISSVectorDB:
         print(f" Added {len(documents)} documents to vector DB")
         print(f"  Total documents in DB: {self.index.ntotal}")
     
-    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 5, prefer_books: bool = True) -> List[Dict[str, Any]]:
         """
-        Search for similar documents
+        Search for similar documents with optional book preference
         
         Args:
             query: Query text
             top_k: Number of results to return
+            prefer_books: If True, prioritize book sources over QA entries
             
         Returns:
-            List of retrieved documents with scores
+            List of retrieved documents with scores and similarity
         """
         if self.index.ntotal == 0:
             print(" Vector DB is empty")
@@ -113,16 +114,34 @@ class FAISSVectorDB:
         # Generate query embedding
         query_embedding = self.create_embeddings([query])
         
-        # Search
-        scores, indices = self.index.search(query_embedding, top_k)
+        # Search with more candidates if preferring books
+        search_k = top_k * 3 if prefer_books else top_k
+        scores, indices = self.index.search(query_embedding, min(search_k, self.index.ntotal))
         
-        # Prepare results
-        results = []
+        # Prepare results with similarity scores
+        all_results = []
         for score, idx in zip(scores[0], indices[0]):
             if idx < len(self.metadata):
                 result = self.metadata[idx].copy()
                 result['score'] = float(score)
-                results.append(result)
+                # Convert L2 distance to similarity (0-1 scale)
+                # Lower distance = higher similarity
+                result['similarity'] = 1.0 / (1.0 + float(score))
+                all_results.append(result)
+        
+        # If prefer_books, rerank to boost book sources
+        if prefer_books and all_results:
+            book_results = [r for r in all_results if r.get('type') == 'book']
+            qa_results = [r for r in all_results if r.get('type') == 'qa']
+            
+            # Take top books and fill remaining with QA if needed
+            book_count = min(len(book_results), max(top_k - 1, int(top_k * 0.7)))
+            qa_count = top_k - book_count
+            
+            results = book_results[:book_count] + qa_results[:qa_count]
+            results = results[:top_k]
+        else:
+            results = all_results[:top_k]
         
         return results
     
