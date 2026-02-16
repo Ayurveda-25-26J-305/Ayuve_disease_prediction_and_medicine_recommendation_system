@@ -260,48 +260,187 @@ export default function Home() {
 }
 
 function MessageComponent({ message }: { message: Message }) {
+  // Parse answer into bullet points for better readability
+  const formatAnswer = (content: string) => {
+    // Split by common delimiters and create bullet points
+    const sentences = content
+      .split(/[.;]\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 20); // Filter out very short fragments
+
+    return sentences;
+  };
+
+  const answerPoints =
+    message.type === "answer" ? formatAnswer(message.content) : [];
+
   return (
     <div className={`message message-${message.type}`}>
       <div className="message-content">
-        <div>{message.content}</div>
-
-        {message.validation && (
-          <div
-            className="validation-info"
-            style={{
-              marginTop: "10px",
-              padding: "8px",
-              backgroundColor: "#f0f9f4",
-              borderRadius: "6px",
-              fontSize: "0.9em",
-            }}
-          >
-            <strong>🎯 Confidence: {message.validation.confidence}%</strong> (
-            {message.validation.confidence_level})
-          </div>
-        )}
-
-        {message.citations && message.citations.length > 0 && (
-          <div className="citations">
-            <div className="citations-header">📚 Sources:</div>
-            {message.citations.map((citation, idx) => (
-              <div key={idx} className="citation-item">
-                <span className="citation-book">{citation.book}</span> – Chapter{" "}
-                {citation.chapter} – Paragraph {citation.paragraph}
-                {citation.similarity_percentage && (
-                  <span
+        {message.type === "question" ? (
+          <div>{message.content}</div>
+        ) : (
+          <>
+            {/* Answer Section with Bullet Points */}
+            <div style={{ marginBottom: "16px" }}>
+              <div
+                style={{
+                  fontSize: "0.9em",
+                  color: "#059669",
+                  fontWeight: "600",
+                  marginBottom: "8px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                📋 Answer Summary
+              </div>
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1fae5",
+                }}
+              >
+                {answerPoints.length > 0 ? (
+                  <ul
                     style={{
-                      marginLeft: "8px",
-                      color: "#059669",
-                      fontWeight: "600",
+                      margin: 0,
+                      paddingLeft: "24px",
+                      lineHeight: "1.8",
                     }}
                   >
-                    ({citation.similarity_percentage}% match)
-                  </span>
+                    {answerPoints.map((point, idx) => (
+                      <li
+                        key={idx}
+                        style={{
+                          marginBottom: "8px",
+                          color: "#1f2937",
+                        }}
+                      >
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div>{message.content}</div>
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+
+            {/* Confidence Score */}
+            {message.validation && (
+              <div
+                style={{
+                  marginBottom: "16px",
+                  padding: "12px",
+                  backgroundColor:
+                    message.validation.confidence >= 75
+                      ? "#d1fae5"
+                      : message.validation.confidence >= 50
+                        ? "#fef3c7"
+                        : "#fee2e2",
+                  borderRadius: "8px",
+                  fontSize: "0.95em",
+                  borderLeft: `4px solid ${
+                    message.validation.confidence >= 75
+                      ? "#059669"
+                      : message.validation.confidence >= 50
+                        ? "#f59e0b"
+                        : "#ef4444"
+                  }`,
+                }}
+              >
+                <strong style={{ fontSize: "1.05em" }}>
+                  🎯 Confidence Score: {message.validation.confidence}%
+                </strong>
+                <span
+                  style={{
+                    marginLeft: "8px",
+                    padding: "2px 8px",
+                    backgroundColor: "rgba(255,255,255,0.7)",
+                    borderRadius: "12px",
+                    fontSize: "0.9em",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {message.validation.confidence_level}
+                </span>
+              </div>
+            )}
+
+            {/* Sources Section */}
+            {message.citations && message.citations.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: "#f9fafb",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.9em",
+                    color: "#059669",
+                    fontWeight: "600",
+                    marginBottom: "10px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  📚 Reference Sources
+                </div>
+                {message.citations.map((citation, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      padding: "10px 12px",
+                      marginBottom: "8px",
+                      borderRadius: "6px",
+                      border: "1px solid #e5e7eb",
+                      fontSize: "0.9em",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: "600",
+                        color: "#059669",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      {citation.book}
+                    </div>
+                    <div
+                      style={{
+                        color: "#6b7280",
+                        fontSize: "0.9em",
+                      }}
+                    >
+                      Chapter {citation.chapter} • Paragraph{" "}
+                      {citation.paragraph}
+                      {citation.similarity_percentage && (
+                        <span
+                          style={{
+                            marginLeft: "12px",
+                            color: "#059669",
+                            fontWeight: "600",
+                            backgroundColor: "#d1fae5",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                          }}
+                        >
+                          {citation.similarity_percentage}% match
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -125,13 +125,13 @@ Paragraph: {paragraph}
         
         # Use Phi-3's chat format properly
         context_summary = context_text[:2000]  # Limit context for focused answers
-        prompt = f"""<|system|>You are an Ayurvedic expert. Provide a brief, clear summary answering the question. Use 3-5 key points in simple language. Be direct and specific.<|end|>
+        prompt = f"""<|system|>You are an Ayurvedic expert. Provide a clear, concise answer with 3-5 key points. Each point should be a complete sentence. Separate points with periods.<|end|>
 <|user|>Ayurvedic Knowledge:
 {context_summary}
 
 Question: {question}
 
-Provide a clear, concise answer with the main benefits or information:<|end|>
+Provide 3-5 key points about this topic:<|end|>
 <|assistant|>"""
         
 
