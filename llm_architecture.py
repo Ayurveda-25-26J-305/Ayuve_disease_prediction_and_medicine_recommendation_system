@@ -62,16 +62,35 @@ class LLMArchitecture:
         print(" Generating response...")
 
         with torch.inference_mode():
-            output_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                do_sample=False,  # Use greedy decoding
-                repetition_penalty=1.2,  # Increased to prevent repetition
-                no_repeat_ngram_size=3,  # Prevent repeating 3-grams
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=True  # Enable cache for coherent generation
-            )
+            # Try with cache first, fall back to no-cache if it fails
+            try:
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
+                    do_sample=True,  # Use sampling for better quality
+                    temperature=0.7,
+                    top_p=0.9,
+                    repetition_penalty=1.2,
+                    no_repeat_ngram_size=3,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    use_cache=True
+                )
+            except (AttributeError, KeyError) as e:
+                # Fallback: use cache=False with sampling to avoid gibberish
+                print(f"⚠️  Cache error, retrying without cache: {e}")
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
+                    do_sample=True,  # Use sampling to avoid gibberish
+                    temperature=0.7,
+                    top_p=0.9,
+                    repetition_penalty=1.3,
+                    no_repeat_ngram_size=4,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    use_cache=False
+                )
 
         # Decode only the newly generated tokens (excluding the input prompt)
         input_length = inputs['input_ids'].shape[1]
