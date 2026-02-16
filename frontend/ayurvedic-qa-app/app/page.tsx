@@ -8,6 +8,10 @@ interface Message {
   type: "question" | "answer";
   content: string;
   citations?: Citation[];
+  validation?: {
+    confidence: number;
+    confidence_level: string;
+  } | null;
 }
 
 interface Citation {
@@ -15,6 +19,7 @@ interface Citation {
   chapter: string;
   paragraph: string;
   formatted: string;
+  similarity_percentage?: number;
 }
 
 export default function Home() {
@@ -105,12 +110,14 @@ export default function Home() {
       if (data.success) {
         console.log("Setting answer:", data.answer);
         console.log("Citations:", data.citations);
+        console.log("Validation:", data.validation);
         setMessages((prev) => [
           ...prev,
           {
             type: "answer",
             content: data.answer || "No answer received",
             citations: data.citations || [],
+            validation: data.validation || null,
           },
         ]);
       } else {
@@ -258,6 +265,12 @@ function MessageComponent({ message }: { message: Message }) {
       <div className="message-content">
         <div>{message.content}</div>
 
+        {message.validation && (
+          <div className="validation-info" style={{marginTop: '10px', padding: '8px', backgroundColor: '#f0f9f4', borderRadius: '6px', fontSize: '0.9em'}}>
+            <strong>🎯 Confidence: {message.validation.confidence}%</strong> ({message.validation.confidence_level})
+          </div>
+        )}
+
         {message.citations && message.citations.length > 0 && (
           <div className="citations">
             <div className="citations-header">📚 Sources:</div>
@@ -265,6 +278,11 @@ function MessageComponent({ message }: { message: Message }) {
               <div key={idx} className="citation-item">
                 <span className="citation-book">{citation.book}</span> – Chapter{" "}
                 {citation.chapter} – Paragraph {citation.paragraph}
+                {citation.similarity_percentage && (
+                  <span style={{marginLeft: '8px', color: '#059669', fontWeight: '600'}}>
+                    ({citation.similarity_percentage}% match)
+                  </span>
+                )}
               </div>
             ))}
           </div>
