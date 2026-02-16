@@ -423,7 +423,20 @@ function MessageComponent({ message }: { message: Message }) {
                           fontSize: "0.9em",
                         }}
                       >
-                        Chapter {citation.chapter} • Verse/Paragraph {citation.paragraph}
+                        {citation.chapter && citation.chapter !== "N/A" ? (
+                          <>
+                            Chapter {citation.chapter}
+                            {citation.paragraph &&
+                              citation.paragraph !== "N/A" && (
+                                <> • Verse/Paragraph {citation.paragraph}</>
+                              )}
+                          </>
+                        ) : citation.paragraph &&
+                          citation.paragraph !== "N/A" ? (
+                          <>Section {citation.paragraph}</>
+                        ) : (
+                          <>Book Reference</>
+                        )}
                         {citation.similarity_percentage && (
                           <span
                             style={{
@@ -449,8 +462,16 @@ function MessageComponent({ message }: { message: Message }) {
                       >
                         Q&A Reference
                         {citation.related_question && (
-                          <span style={{ display: "block", marginTop: "4px", fontSize: "0.85em" }}>
-                            Related: {citation.related_question.substring(0, 80)}{citation.related_question.length > 80 ? "..." : ""}
+                          <span
+                            style={{
+                              display: "block",
+                              marginTop: "4px",
+                              fontSize: "0.85em",
+                            }}
+                          >
+                            Related:{" "}
+                            {citation.related_question.substring(0, 80)}
+                            {citation.related_question.length > 80 ? "..." : ""}
                           </span>
                         )}
                         {citation.similarity_percentage && (

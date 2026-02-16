@@ -160,43 +160,58 @@ class BookProcessor:
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # Try to detect chapters automatically
-        chapter_pattern = r'(?:Chapter|CHAPTER|Ch\.|Ch)\s+(\d+)'
-        chapters = re.split(f'({chapter_pattern})', text, flags=re.IGNORECASE)
+        # Enhanced patterns for chapter detection (support multiple formats)
+        chapter_patterns = [
+            r'Chapter\s+(\d+)',  # Chapter 1
+            r'CHAPTER\s+(\d+)',  # CHAPTER 1
+            r'Ch\.?\s*(\d+)',    # Ch. 1 or Ch 1
+            r'Adhyaya\s+(\d+)',  # Sanskrit: Adhyaya 1
+            r'\d+\.\s+Adhyaya', # 1. Adhyaya
+            r'===\s*Chapter\s+(\d+)',  # === Chapter 1
+        ]
+        
+        # Try each pattern
+        detected_chapters = None
+        chapter_nums = []
+        
+        for pattern in chapter_patterns:
+            matches = list(re.finditer(pattern, text, re.IGNORECASE))
+            if len(matches) >= 2:  # Found at least 2 chapters
+                detected_chapters = matches
+                chapter_nums = [int(m.group(1)) if m.group(1).isdigit() else i+1 
+                               for i, m in enumerate(matches)]
+                print(f"   Detected {len(matches)} chapters using pattern: {pattern}")
+                break
         
         all_chunks = []
         
-        if len(chapters) > 1:
-            # Book has chapter structure
-            print(f"   Detected {(len(chapters)-1)//3} chapters")
-            
-            current_chapter = 0
-            for i in range(0, len(chapters)):
-                chunk_text = chapters[i].strip()
+        if detected_chapters:
+            # Process text by chapters
+            for i, match in enumerate(detected_chapters):
+                chapter_num = chapter_nums[i]
+                start_pos = match.end()
+                end_pos = detected_chapters[i+1].start() if i+1 < len(detected_chapters) else len(text)
                 
-                # Check if this is a chapter marker
-                chapter_match = re.match(chapter_pattern, chunk_text, re.IGNORECASE)
-                if chapter_match:
-                    current_chapter = int(chapter_match.group(1))
-                    continue
+                chapter_text = text[start_pos:end_pos].strip()
                 
-                if chunk_text and current_chapter > 0:
-                    # Process chapter content
+                if chapter_text:
+                    # Chunk this chapter
                     chunks = self.chunker.chunk_text(
-                        text=chunk_text,
+                        text=chapter_text,
                         source=book_name,
-                        metadata={"chapter": current_chapter}
+                        metadata={"chapter": chapter_num}
                     )
                     all_chunks.extend(chunks)
         else:
-            # No chapter structure, just chunk the whole book
+            # No chapter structure detected, chunk entire book
+            print("   No chapter structure detected, chunking entire text")
             all_chunks = self.chunker.chunk_text(
                 text=text,
                 source=book_name,
-                metadata={}
+                metadata={"book": book_name}
             )
         
-        print(f"  Created {len(all_chunks)} chunks")
+        print(f"   Created {len(all_chunks)} chunks")
         return all_chunks
     
     def process_structured_text(self,
