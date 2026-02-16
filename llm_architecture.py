@@ -67,25 +67,21 @@ class LLMArchitecture:
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                    do_sample=True,  # Use sampling for better quality
-                    temperature=0.7,
-                    top_p=0.9,
-                    repetition_penalty=1.2,
+                    do_sample=False,  # Greedy for deterministic output
+                    repetition_penalty=1.15,
                     no_repeat_ngram_size=3,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=True
                 )
             except (AttributeError, KeyError) as e:
-                # Fallback: use cache=False with sampling to avoid gibberish
+                # Fallback: greedy decoding without cache
                 print(f"⚠️  Cache error, retrying without cache: {e}")
                 output_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                    do_sample=True,  # Use sampling to avoid gibberish
-                    temperature=0.7,
-                    top_p=0.9,
-                    repetition_penalty=1.3,
+                    max_new_tokens=min(max_new_tokens or 64, 400),  # Limit tokens for better quality
+                    do_sample=False,  # Greedy for coherent output
+                    repetition_penalty=1.25,
                     no_repeat_ngram_size=4,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,

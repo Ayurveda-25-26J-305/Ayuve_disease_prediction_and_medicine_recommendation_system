@@ -108,13 +108,13 @@ Paragraph: {paragraph}
         context_length = sum(len(d.get("text", "")) for d in top_context_docs)
         question_length = len(question)
         
-        # Estimate tokens needed: increased for complete answers
+        # Reduced tokens for better quality - shorter focused answers
         if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 600  # Full detailed answer
+            dynamic_tokens = 350  # Focused detailed answer
         elif context_length > 1000:
-            dynamic_tokens = 500  # Medium detailed answer
+            dynamic_tokens = 300  # Medium answer
         else:
-            dynamic_tokens = 400  # Standard answer
+            dynamic_tokens = 250  # Concise answer
             
         print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
@@ -125,10 +125,14 @@ Paragraph: {paragraph}
         
         # Use Phi-3's chat format properly
         context_summary = context_text[:2500]  # Increased context limit
-        prompt = f"""<|system|>You are an expert Ayurvedic physician. Provide clear, comprehensive answers based on the context provided. Include specific details, benefits, and practical information. Structure your answer with bullet points for clarity.<|end|>
-<|user|>Context: {context_summary}
+        prompt = f"""<|system|>You are an Ayurvedic expert. Answer the question clearly and directly based on the provided context. Use simple, natural language. Structure your answer as a clear list of benefits or information.<|end|>
+<|user|>Based on this Ayurvedic text:
 
-Question: {question}<|end|>
+{context_summary}
+
+Question: {question}
+
+Please provide a clear answer with specific benefits or information from the text above.<|end|>
 <|assistant|>"""
         
 
