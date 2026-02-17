@@ -80,9 +80,10 @@ def initialize_system():
         max_new_tokens=config.get('max_new_tokens', 64),
         enable_validation=True,
         enable_personalization=True,
+        enable_translation=True,  # Enable Sinhala ↔ English translation
         embedding_model=config['embedding_model']
     )
-    print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
+    print("✓ Enhanced LLM initialized (Validation + Personalization + Translation enabled)")
     
     print("\n" + "=" * 70)
     print("✓ Backend ready to serve requests")
@@ -218,6 +219,7 @@ def ask_question():
             citations.append(formatted)
         
         print(f"✓ Answer generated")
+        print(f"  Detected language: {response.get('detected_language', 'en').upper()}")
         print(f"  Confidence: {response['validation']['confidence']}%")
         print(f"  Personalized: {response['personalized']}")
         print(f"  Citations: {len(citations)}")
@@ -225,8 +227,12 @@ def ask_question():
         
         result = {
             "success": True,
-            "answer": response['answer'],
+            "answer": response['answer'],  # In user's language (English or Sinhala)
+            "answer_english": response.get('answer_english', response['answer']),  # Always English
             "base_answer": response.get('base_answer', ''),  # For comparison
+            "original_question": response.get('original_question', question),
+            "translated_question": response.get('translated_question'),  # English translation if Sinhala
+            "detected_language": response.get('detected_language', 'en'),
             "citations": citations,
             "num_sources": response['num_sources'],
             "validation": response.get('validation', {}),

@@ -13,6 +13,7 @@ from llm_architecture import LLMArchitecture
 # Import the new engines
 from validation_engine import ValidationEngine
 from personalization_engine import PersonalizationEngine
+from translation_service import TranslationService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class EnhancedAyurvedicRAG:
         max_new_tokens: int = 64,
         enable_validation: bool = True,
         enable_personalization: bool = True,
+        enable_translation: bool = True,
         embedding_model: str = "BAAI/bge-base-en-v1.5"
     ):
         # Initialize base LLM
@@ -55,6 +57,25 @@ class EnhancedAyurvedicRAG:
             logger.info("✓ PersonalizationEngine ready")
         else:
             self.personalizer = None
+        
+        # Initialize translation service
+        self.enable_translation = enable_translation
+        if enable_translation:
+            logger.info("Initializing TranslationService...")
+            try:
+                self.translator = TranslationService(device=self.llm.device)
+                if self.translator.is_available():
+                    logger.info("✓ TranslationService ready (English ↔ Sinhala)")
+                else:
+                    logger.warning("⚠️  Translation models not loaded, translation disabled")
+                    self.translator = None
+                    self.enable_translation = False
+            except Exception as e:
+                logger.warning(f"⚠️  Translation initialization failed: {e}")
+                self.translator = None
+                self.enable_translation = False
+        else:
+            self.translator = None
         
         logger.info("EnhancedAyurvedicRAG initialized (GPU FORCED)")
     
@@ -170,10 +191,24 @@ Related Question: {question}
         user_profile: Optional[Dict[str, Any]] = None,
         validation_top_k: int = 5
     ) -> Dict[str, Any]:
-        """Answer question with validation and personalization"""
+        """Answer question with validation, personalization, and translation"""
         logger.info(f"Processing question: {question[:50]}...")
         
+        # === TRANSLATION: Detect language and translate question if needed ===
+        original_question = question
+        detected_language = 'en'  # Default to English
+        
+        if self.enable_translation and self.translator:
+            detected_language = self.translator.detect_language(question)
+            print(f"🌐 Detected language: {detected_language.upper()}")
+            
+            if detected_language == 'si':
+                # Translate Sinhala question to English for processing
+                question = self.translator.translate_si_to_en(question)
+                print(f"🔄 Translated question: {question[:100]}...")
+        
         # Retrieve documents with similarity scores (prefer book sources)
+        # Note: Always search in English since database is in English
         print("🔍 Retrieving relevant sources...")
         retrieved_docs = vector_db.search(question, top_k=validation_top_k, prefer_books=True)
         
@@ -308,9 +343,22 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
             
             formatted_citations.append(citation)
         
+        # === TRANSLATION: Translate answer back to user's language ===
+        display_answer = final_answer  # English version
+        
+        if self.enable_translation and self.translator and detected_language == 'si':
+            # Translate answer back to Sinhala
+            print("🔄 Translating answer to Sinhala...")
+            display_answer = self.translator.translate_en_to_si(final_answer)
+            print(f"✓ Translation complete: {display_answer[:100]}...")
+        
         response = {
-            "answer": final_answer,
+            "answer": display_answer,  # Answer in user's language
+            "answer_english": final_answer,  # Always keep English version
             "base_answer": base_answer,
+            "original_question": original_question,
+            "translated_question": question if detected_language == 'si' else None,
+            "detected_language": detected_language,
             "citations": formatted_citations,
             "sources": top_context_docs,
             "all_sources": retrieved_docs,
