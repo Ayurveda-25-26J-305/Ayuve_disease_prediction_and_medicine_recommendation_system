@@ -208,12 +208,64 @@ Related Question: {question}
         
         return '\n'.join(unique_lines).strip()
     
+    def _simplify_for_translation(self, english_text: str) -> str:
+        """
+        Simplify English text before translation to improve Sinhala quality.
+        - Break down complex sentences
+        - Remove excessive technical jargon
+        - Make sentences more translation-friendly
+        """
+        import re
+        
+        if not english_text or not english_text.strip():
+            return ""
+        
+        # Split into lines (bullets)
+        lines = english_text.split('\n')
+        simplified_lines = []
+        
+        for line in lines:
+            if not line.strip():
+                continue
+            
+            # Extract bullet marker and content
+            if line.strip().startswith('-'):
+                bullet = '- '
+                content = line.strip()[2:].strip()
+            else:
+                bullet = ''
+                content = line.strip()
+            
+            # Simplify: Remove parenthetical phrases that don't translate well
+            content = re.sub(r'\s*\([^)]+\)\s*', ' ', content)
+            
+            # Simplify: Break very long sentences (>150 chars) at conjunctions
+            if len(content) > 150:
+                # Try to keep first clause only (up to first major conjunction)
+                parts = re.split(r',\s+(?:and|while|thereby|hence|thus|including)\s+', content, maxsplit=1)
+                if parts and len(parts[0]) > 50:
+                    content = parts[0]
+                    if not content.endswith('.'):
+                        content += '.'
+            
+            # Clean up extra spaces
+            content = re.sub(r'\s+', ' ', content).strip()
+            
+            # Ensure ends with period
+            if content and not content.endswith(('.', '!', '?')):
+                content += '.'
+            
+            if content and len(content) > 15:  # Skip very short fragments
+                simplified_lines.append(f"{bullet}{content}")
+        
+        return '\n'.join(simplified_lines)
+    
     def _cleanup_translated_answer(self, translated_text: str) -> str:
         """
         Post-process translated Sinhala text to fix common issues:
         - Remove incomplete sentences
         - Fix formatting
-        - Remove English artifact words
+        - Remove gibberish words
         """
         import re
         
@@ -229,30 +281,122 @@ Related Question: {question}
             if not line:
                 continue
             
-            # Skip very short incomplete lines (likely cut off)
-            if line.startswith('-') and len(line) < 20:
+            # Extract bullet and content
+            if line.startswith('-'):
+                bullet = '- '
+                content = line[2:].strip()
+            else:
+                bullet = ''
+                content = line.strip()
+            
+            if not content:
                 continue
             
-            # Check if line ends properly (Sinhala sentence should end with specific chars)
-            # Common Sinhala endings: ය, ති, ත, ට, ද, ම, න, ව, etc.
-            if line.startswith('-'):
-                content = line[1:].strip()
-                # If doesn't end with Sinhala character or punctuation, likely incomplete
-                if content and not re.search(r'[\u0D80-\u0DFF.!?]$', content):
-                    # Try to add period if it's somewhat complete
-                    if len(content) > 40:  # Reasonable length
-                        line = line.rstrip() + '.'
-                    else:
-                        # Too short and incomplete, skip it
-                        continue
+            # Check for gibberish (words with unusual character patterns)
+            # Look for words that don't follow Sinhala patterns (e.g., "නයිබර්")
+            words = content.split()
+            cleaned_words = []
             
-            cleaned_lines.append(line)
+            for word in words:
+                # Check if word has Sinhala characters
+                has_sinhala = bool(re.search(r'[\u0D80-\u0DFF]', word))
+                
+                if has_sinhala:
+                    # Check for gibberish patterns (isolated vowel signs, excessive marks)
+                    # Filter out words with unusual patterns like excessive ් (al-lakuna)
+                    gibberish_pattern = r'([\u0DCA]{2,})|([ා-ෟ]{3,})'
+                    if not re.search(gibberish_pattern, word):
+                        cleaned_words.append(word)
+                else:
+                    # Keep non-Sinhala words (numbers, punctuation)
+                    cleaned_words.append(word)
+            
+            if not cleaned_words:
+                continue
+            
+            content = ' '.join(cleaned_words)
+            
+            # Check if sentence is complete
+            # Sinhala sentences typically end with: ය, ා, ී, ෙ, ති, ද, ට, ම, න, ව, or punctuation
+            sinhala_endings = r'[යාීෙතිදටමනව.!?]$'
+            
+            # Skip if too short and doesn't end properly
+            if len(content) < 30:
+                if not re.search(sinhala_endings, content):
+                    continue
+            
+            # If reasonably long but doesn't end properly, skip it
+            if len(content) >= 30 and len(content) < 100:
+                if not re.search(sinhala_endings, content):
+                    continue
+            
+            # For long text, check if it ends with Sinhala or punctuation
+            if len(content) >= 100:
+                if not re.search(r'[\u0D80-\u0DFF.!?]$', content):
+                    # Incomplete, skip it
+                    continue
+            
+            # Add cleaned line
+            if content:
+                cleaned_lines.append(f"{bullet}{content}")
         
         # Ensure we have at least some content
         if not cleaned_lines:
             return translated_text  # Return original if cleanup removed everything
         
         return '\n'.join(cleaned_lines)
+    
+    def _add_term_clarification(self, answer: str, original_question: str, is_romanized: bool) -> str:
+        """
+        Add term clarification to answer for romanized Singlish queries.
+        Example: "Kurudu (known as cinnamon in English) has the following benefits:"
+        
+        Args:
+            answer: The English answer
+            original_question: The original romanized question
+            is_romanized: Whether the question was romanized Singlish
+            
+        Returns:
+            Answer with term clarification prepended if applicable
+        """
+        if not is_romanized or not self.translator:
+            return answer
+        
+        # Import the dictionary
+        from translation_service import SINHALA_TO_ENGLISH_DICT
+        
+        # Extract romanized keywords from the question
+        import re
+        words = re.findall(r'\b\w+\b', original_question.lower())
+        
+        # Find herb/ingredient keywords that were translated
+        clarifications = []
+        seen = set()
+        
+        for word in words:
+            if word in SINHALA_TO_ENGLISH_DICT and word not in seen:
+                english_word = SINHALA_TO_ENGLISH_DICT[word]
+                
+                # Only clarify nouns (herbs, ingredients, etc.) not question words
+                question_words = {'monawada', 'mokadda', 'mokada', 'kohomada', 'kawuda', 
+                                'kauda', 'kiyada', 'keyada', 'da', 'eka', 'wala', 'walata'}
+                
+                if word not in question_words and len(english_word) > 3:
+                    # Capitalize for clarity
+                    clarifications.append(f"{word.capitalize()} ({english_word})")
+                    seen.add(word)
+        
+        # If we found terms to clarify, prepend to answer
+        if clarifications:
+            if len(clarifications) == 1:
+                clarification_text = f"About {clarifications[0]}:\n\n"
+            else:
+                terms = ', '.join(clarifications[:-1]) + f" and {clarifications[-1]}"
+                clarification_text = f"About {terms}:\n\n"
+            
+            return clarification_text + answer
+        
+        return answer
     
     def answer_question(
         self, 
@@ -424,6 +568,16 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
             
             formatted_citations.append(citation)
         
+        # === ADD TERM CLARIFICATION for romanized Singlish ===
+        # If user asked in romanized Singlish, explain what the terms mean
+        if detected_language == 'si' and is_romanized:
+            print("📝 Adding term clarification for romanized Singlish...")
+            final_answer = self._add_term_clarification(
+                answer=final_answer,
+                original_question=original_question,
+                is_romanized=is_romanized
+            )
+        
         # === TRANSLATION: Translate answer back to user's language ===
         display_answer = final_answer  # Default: English version
         
@@ -431,11 +585,22 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
             # Workflow: Singlish/Sinhala input → English processing → Sinhala output
             print("🔄 Translating answer to Sinhala...")
-            raw_translation = self.translator.translate_en_to_si(final_answer)
             
-            # Clean up translated text (remove incomplete sentences, fix formatting)
+            # Step 1: Simplify English for better translation
+            simplified_english = self._simplify_for_translation(final_answer)
+            print(f"📝 Simplified English: {simplified_english[:100]}...")
+            
+            # Step 2: Translate to Sinhala
+            raw_translation = self.translator.translate_en_to_si(simplified_english)
+            
+            # Step 3: Clean up translated text (remove gibberish, incomplete sentences)
             display_answer = self._cleanup_translated_answer(raw_translation)
             print(f"✓ Translation complete: {display_answer[:100]}...")
+            
+            # Failsafe: If cleanup removed everything, use original English
+            if not display_answer or len(display_answer.strip()) < 20:
+                print("⚠️  Translation cleanup removed too much, using English")
+                display_answer = final_answer
         
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
