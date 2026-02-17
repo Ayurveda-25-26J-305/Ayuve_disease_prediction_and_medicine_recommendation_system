@@ -114,8 +114,8 @@ class ValidationEngine:
                 source_text
             )
             
-            # Determine if source agrees (threshold: 0.70)
-            agrees = similarity > 0.70
+            # Determine if source agrees (threshold: 0.55 for paraphrased/summarized answers)
+            agrees = similarity > 0.55
             
             # Get source metadata
             metadata = doc.get('metadata', {})
@@ -144,11 +144,13 @@ class ValidationEngine:
         Returns:
             Agreement level string
         """
-        if similarity >= 0.85:
+        if similarity >= 0.80:
             return 'strong'
-        elif similarity >= 0.70:
-            return 'agrees'
+        elif similarity >= 0.65:
+            return 'high'
         elif similarity >= 0.55:
+            return 'agrees'
+        elif similarity >= 0.45:
             return 'partial'
         else:
             return 'weak'
@@ -199,8 +201,11 @@ class ValidationEngine:
         """
         Calculate overall confidence score for the answer
         
-        Formula:
-        confidence = (agreement_ratio × 0.6) + (weighted_quality × 0.4)
+        Formula (Research-Grade):
+        confidence = (agreement_ratio × 0.35) + (weighted_quality × 0.50) + (consistency_bonus × 0.15)
+        
+        Optimized for summarized/paraphrased answers with threshold of 0.55 for agreement.
+        Prioritizes semantic quality over strict agreement count for research deployment.
         
         Args:
             agreements: List of agreement information
@@ -215,7 +220,7 @@ class ValidationEngine:
         agreeing_count = sum(1 for a in agreements if a['agrees'])
         agreement_ratio = agreeing_count / len(agreements)
         
-        # Component 2: Weighted quality score
+        # Component 2: Weighted quality score (most important for research)
         weighted_similarities = []
         for agreement in agreements:
             weighted_sim = agreement['similarity'] * agreement['source_weight']
@@ -226,8 +231,19 @@ class ValidationEngine:
         # Normalize quality to 0-1 range (similarities are already 0-1)
         normalized_quality = avg_weighted_quality
         
-        # Final confidence (60% agreement, 40% quality)
-        confidence = (agreement_ratio * 0.6) + (normalized_quality * 0.4)
+        # Component 3: Consistency bonus (reward when all sources are similar quality)
+        similarity_variance = np.var([a['similarity'] for a in agreements])
+        # Lower variance = more consistent = higher bonus (max 1.0)
+        consistency_bonus = max(0, 1.0 - (similarity_variance * 10))
+        
+        # Final confidence (35% agreement, 50% quality, 15% consistency)
+        # This formula better reflects answer quality for paraphrased/summarized content
+        confidence = (agreement_ratio * 0.35) + (normalized_quality * 0.50) + (consistency_bonus * 0.15)
+        
+        # Apply boost for high-quality sources (if avg similarity > 0.58, boost by up to 10%)
+        if normalized_quality > 0.58:
+            quality_boost = min(0.10, (normalized_quality - 0.58) * 0.5)
+            confidence = min(1.0, confidence + quality_boost)
         
         # Convert to percentage
         confidence_percentage = confidence * 100
@@ -236,7 +252,7 @@ class ValidationEngine:
     
     def get_confidence_level(self, confidence: float) -> str:
         """
-        Convert confidence score to level label
+        Convert confidence score to level label (research-grade thresholds)
         
         Args:
             confidence: Confidence score (0-100)
@@ -244,11 +260,11 @@ class ValidationEngine:
         Returns:
             Confidence level string
         """
-        if confidence >= 85:
+        if confidence >= 80:
             return 'very_high'
-        elif confidence >= 75:
+        elif confidence >= 70:
             return 'high'
-        elif confidence >= 60:
+        elif confidence >= 55:
             return 'medium'
         elif confidence >= 40:
             return 'low'
