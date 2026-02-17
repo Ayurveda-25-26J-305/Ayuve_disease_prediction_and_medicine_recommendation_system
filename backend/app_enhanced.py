@@ -21,12 +21,10 @@ import yaml
 app = Flask(__name__)
 # Enable CORS for frontend with credentials support
 CORS(app, resources={r"/*": {
-    "origins": "*",  # Allow all origins (needed for localtunnel)
-    "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
-    "allow_headers": ["Content-Type", "Bypass-Tunnel-Reminder", "ngrok-skip-browser-warning", "Authorization"],
-    "expose_headers": ["Content-Type"],
-    "supports_credentials": False,  # Set to False when using wildcard origins
-    "max_age": 3600
+    "origins": ["http://localhost:3000", "http://localhost:3001", "https://ayurvedic-qa.loca.lt"],
+    "methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Bypass-Tunnel-Reminder", "ngrok-skip-browser-warning"],
+    "supports_credentials": True
 }})
 
 # Global variables for system components
@@ -139,16 +137,6 @@ def format_citation(source_doc, validation_info=None):
 # ============================================================
 # API ENDPOINTS
 # ============================================================
-
-# Handle OPTIONS requests for CORS preflight
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Bypass-Tunnel-Reminder, ngrok-skip-browser-warning, Authorization'
-        return response
 
 @app.route('/')
 def home():
