@@ -224,8 +224,6 @@ class BookProcessor:
                 source=book_name,
                 metadata={"book": book_name}
             )
-                metadata={"book": book_name}
-            )
         
         print(f"   Created {len(all_chunks)} chunks")
         
