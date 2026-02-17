@@ -207,7 +207,8 @@ Related Question: {question}
                 unique_lines.append(line)
         
         return '\n'.join(unique_lines).strip()
-        def _cleanup_translated_answer(self, translated_text: str) -> str:
+    
+    def _cleanup_translated_answer(self, translated_text: str) -> str:
         """
         Post-process translated Sinhala text to fix common issues:
         - Remove incomplete sentences
