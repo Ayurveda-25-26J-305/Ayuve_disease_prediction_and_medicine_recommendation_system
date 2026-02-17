@@ -197,14 +197,22 @@ Related Question: {question}
         # === TRANSLATION: Detect language and translate question if needed ===
         original_question = question
         detected_language = 'en'  # Default to English
+        is_romanized = False  # Track if romanized Singlish
         
         if self.enable_translation and self.translator:
             detected_language = self.translator.detect_language(question)
             print(f"🌐 Detected language: {detected_language.upper()}")
             
             if detected_language == 'si':
+                # Check if romanized (no Sinhala Unicode chars) or Sinhala script
+                is_romanized = not self.translator._has_sinhala_chars(question)
+                
+                if is_romanized:
+                    print(f"📝 Romanized Singlish detected (e.g., 'kurudu wala guna')")
+                
                 # Translate Sinhala question to English for processing
-                question = self.translator.translate_si_to_en(question)
+                # If romanized, will be transliterated first inside translate_si_to_en
+                question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
                 print(f"🔄 Translated question: {question[:100]}...")
         
         # Retrieve documents with similarity scores (prefer book sources)

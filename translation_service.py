@@ -8,6 +8,8 @@ Uses Helsinki-NLP models from Hugging Face (FREE, runs on GPU):
 
 Features:
 - Automatic language detection (langdetect library)
+- Romanized Singlish detection (e.g., "kurudu wala guna monawada?")
+- Transliteration (romanized → Sinhala script)
 - Bidirectional translation
 - GPU acceleration
 - Fallback to English if translation fails
@@ -18,6 +20,56 @@ from typing import Dict, Tuple, Optional
 import re
 
 logger = logging.getLogger(__name__)
+
+
+# Common Sinhala words in romanized form for Singlish detection
+SINHALA_ROMANIZED_KEYWORDS = {
+    # Question words
+    'mokadda', 'monawada', 'monawa', 'mokada', 'kohomada', 'kohoma', 
+    'kiyada', 'keyada', 'kawuda', 'kauda', 'kewda', 'kaudda',
+    'ehenam', 'mata', 'api', 'oya', 'oyala', 'meka', 'eka', 'me',
+    
+    # Common Ayurvedic/Health terms
+    'leda', 'roga', 'behet', 'osuda', 'osuwa', 'wedakama', 
+    'aushadha', 'guna', 'wala', 'thiyenawa', 'karanna', 'denne',
+    'aragena', 'bonna', 'bonawa', 'gaththa', 'ganna', 'gannawa',
+    
+    # Common herbs/foods
+    'kurudu', 'kaha', 'inguru', 'suduru', 'karapincha', 'goraka',
+    'thippili', 'welpenela', 'komarika', 'raththran', 'venivel',
+    
+    # Body/Health terms
+    'riha', 'sathura', 'thalapola', 'gawwa', 'linda', 'linda',
+    'duka', 'wedana', 'hadada', 'hawa', 'una', 'seetha',
+    
+    # Common verbs/adjectives
+    'honda', 'naraka', 'loku', 'podi', 'wadi', 'adu', 'thiyenawa',
+    'denne', 'karanna', 'ganna', 'bonawa', 'kannawa', 'yanawa',
+    
+    # Particles
+    'da', 'ta', 'ekka', 'nisa', 'hinda', 'walata', 'wala', 'gen',
+    'ekada', 'nemei', 'nehe', 'athi', 'nathi'
+}
+
+# Romanized to Sinhala character mapping (simplified)
+ROMANIZED_TO_SINHALA = {
+    'a': 'අ', 'aa': 'ආ', 'ae': 'ඇ', 'aae': 'ඈ',
+    'i': 'ඉ', 'ii': 'ඊ', 'u': 'උ', 'uu': 'ඌ',
+    'e': 'එ', 'ee': 'ඒ', 'ai': 'ඓ', 'o': 'ඔ', 'oo': 'ඕ', 'au': 'ඖ',
+    
+    'ka': 'ක', 'kha': 'ඛ', 'ga': 'ග', 'gha': 'ඝ', 'nga': 'ඞ',
+    'cha': 'ච', 'chha': 'ඡ', 'ja': 'ජ', 'jha': 'ඣ', 'nya': 'ඤ',
+    'ta': 'ට', 'tta': 'ට', 'tha': 'ථ', 'da': 'ද', 'dha': 'ධ', 'na': 'න',
+    'pa': 'ප', 'pha': 'ෆ', 'ba': 'බ', 'bha': 'භ', 'ma': 'ම',
+    'ya': 'ය', 'ra': 'ර', 'la': 'ල', 'wa': 'ව', 'va': 'ව',
+    'sa': 'ස', 'sha': 'ශ', 'ha': 'හ', 'lla': 'ළ', 'fa': 'ෆ',
+    
+    # Common combinations
+    'kurudu': 'කුරුඳු', 'kaha': 'කහ', 'inguru': 'ඉඟුරු',
+    'behet': 'බෙහෙත්', 'osuda': 'ඖෂධ', 'guna': 'ගුණ',
+    'wala': 'වල', 'monawada': 'මොනවද', 'mokadda': 'මොකද්ද',
+    'kohomada': 'කොහොමද', 'mata': 'මට', 'me': 'මේ',
+}
 
 
 class TranslationService:
@@ -86,13 +138,13 @@ class TranslationService:
     
     def detect_language(self, text: str) -> str:
         """
-        Detect language of input text
+        Detect language of input text (including romanized Singlish)
         
         Args:
             text: Input text
             
         Returns:
-            Language code: 'si' (Sinhala), 'en' (English), or 'unknown'
+            Language code: 'si' (Sinhala/Singlish), 'en' (English), or 'unknown'
         """
         if not self.language_detector:
             return 'unknown'
@@ -104,7 +156,16 @@ class TranslationService:
             if not clean_text:
                 return 'unknown'
             
-            # Detect language
+            # FIRST: Check for Sinhala Unicode characters (highest priority)
+            if self._has_sinhala_chars(text):
+                return 'si'
+            
+            # SECOND: Check for romanized Singlish (before langdetect)
+            if self._is_romanized_singlish(text):
+                logger.info("Detected romanized Singlish (e.g., 'kurudu wala guna monawada?')")
+                return 'si'
+            
+            # THIRD: Use langdetect for standard detection
             detected = self.language_detector.detect(clean_text)
             
             # Map to supported languages
@@ -113,9 +174,6 @@ class TranslationService:
             elif detected == 'en':
                 return 'en'
             else:
-                # Check for Sinhala Unicode characters
-                if self._has_sinhala_chars(text):
-                    return 'si'
                 return 'en'  # Default to English
                 
         except Exception as e:
@@ -139,12 +197,128 @@ class TranslationService:
         sinhala_pattern = re.compile(r'[\u0D80-\u0DFF]')
         return bool(sinhala_pattern.search(text))
     
-    def translate_si_to_en(self, text: str) -> str:
+    def _is_romanized_singlish(self, text: str) -> bool:
+        """
+        Detect if text is romanized Singlish (Sinhala words written in English letters)
+        
+        Examples:
+            "kurudu wala guna monawada?" → True (Singlish)
+            "what are the benefits?" → False (English)
+        
+        Args:
+            text: Input text
+            
+        Returns:
+            True if romanized Singlish detected
+        """
+        # Convert to lowercase and split into words
+        words = re.findall(r'\b[a-z]+\b', text.lower())
+        
+        if not words:
+            return False
+        
+        # Count how many words match Sinhala keywords
+        sinhala_word_count = sum(1 for word in words if word in SINHALA_ROMANIZED_KEYWORDS)
+        
+        # If 30% or more words are Sinhala keywords, consider it Singlish
+        # OR if text has 2+ Sinhala keywords (for short questions)
+        threshold_ratio = 0.30
+        threshold_count = 2
+        
+        is_singlish = (
+            (sinhala_word_count / len(words) >= threshold_ratio) or
+            (sinhala_word_count >= threshold_count)
+        )
+        
+        if is_singlish:
+            logger.info(f"Romanized Singlish detected: {sinhala_word_count}/{len(words)} Sinhala words")
+        
+        return is_singlish
+    
+    def _transliterate_to_sinhala(self, text: str) -> str:
+        """
+        Transliterate romanized Singlish to Sinhala script
+        
+        Uses word-level mapping for common terms, falls back to character mapping.
+        
+        Args:
+            text: Romanized text (e.g., "kurudu wala guna monawada?")
+            
+        Returns:
+            Sinhala script text (e.g., "කුරුඳු වල ගුණ මොනවද?")
+        """
+        # Split text into words
+        words = text.lower().split()
+        transliterated_words = []
+        
+        for word in words:
+            # Clean word (remove punctuation)
+            clean_word = re.sub(r'[^\w]', '', word)
+            
+            # Try direct mapping first (for common words)
+            if clean_word in ROMANIZED_TO_SINHALA:
+                transliterated_words.append(ROMANIZED_TO_SINHALA[clean_word])
+            else:
+                # Fallback: character-by-character transliteration (simplified)
+                # This is not perfect but gives reasonable approximation
+                transliterated = self._simple_transliterate(clean_word)
+                transliterated_words.append(transliterated)
+        
+        result = ' '.join(transliterated_words)
+        logger.info(f"Transliterated: '{text}' → '{result}'")
+        return result
+    
+    def _simple_transliterate(self, word: str) -> str:
+        """
+        Simple character-based transliteration for words not in dictionary
+        
+        This is a simplified approach - not perfect but reasonable.
+        For production, consider using dedicated libraries like 'sinling' or 'icu'.
+        
+        Args:
+            word: Romanized word
+            
+        Returns:
+            Approximated Sinhala text
+        """
+        # Very basic mapping - just enough for common patterns
+        # For better quality, use a proper transliteration library
+        result = []
+        i = 0
+        while i < len(word):
+            # Try 3-char combinations first
+            if i + 2 < len(word):
+                three = word[i:i+3]
+                if three in ROMANIZED_TO_SINHALA:
+                    result.append(ROMANIZED_TO_SINHALA[three])
+                    i += 3
+                    continue
+            
+            # Try 2-char combinations
+            if i + 1 < len(word):
+                two = word[i:i+2]
+                if two in ROMANIZED_TO_SINHALA:
+                    result.append(ROMANIZED_TO_SINHALA[two])
+                    i += 2
+                    continue
+            
+            # Single character
+            single = word[i]
+            if single in ROMANIZED_TO_SINHALA:
+                result.append(ROMANIZED_TO_SINHALA[single])
+            else:
+                result.append(single)  # Keep as-is if no mapping
+            i += 1
+        
+        return ''.join(result)
+    
+    def translate_si_to_en(self, text: str, is_romanized: bool = False) -> str:
         """
         Translate Sinhala text to English
         
         Args:
-            text: Sinhala text
+            text: Sinhala text (Unicode or romanized)
+            is_romanized: If True, text is romanized Singlish (will be transliterated first)
             
         Returns:
             English translation
@@ -152,6 +326,11 @@ class TranslationService:
         if not self.si_to_en_model:
             logger.warning("Translation model not loaded, returning original text")
             return text
+        
+        # If romanized, transliterate to Sinhala script first
+        if is_romanized:
+            logger.info("Transliterating romanized Singlish to Sinhala script...")
+            text = self._transliterate_to_sinhala(text)
         
         try:
             # Tokenize
