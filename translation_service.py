@@ -170,25 +170,28 @@ class TranslationService:
     def _load_models(self):
         """Load translation models and language detector"""
         try:
-            from transformers import MarianMTModel, MarianTokenizer
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
             import langdetect
             
             logger.info("Loading Sinhala ↔ English translation models...")
+            logger.info("  Using Meta NLLB-200 (supports 200 languages including Sinhala)...")
             
-            # Sinhala → English
-            logger.info("  Loading opus-mt-si-en (Sinhala → English)...")
-            self.si_to_en_tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-si-en")
-            self.si_to_en_model = MarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-si-en").to(self.device)
+            # Load NLLB model (bidirectional translation)
+            model_name = "facebook/nllb-200-distilled-600M"
+            logger.info(f"  Loading {model_name}...")
             
-            # English → Sinhala  
-            logger.info("  Loading opus-mt-en-si (English → Sinhala)...")
-            self.en_to_si_tokenizer = MarianTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-si")
-            self.en_to_si_model = MarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-en-si").to(self.device)
+            self.si_to_en_tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.si_to_en_model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
+            
+            # Use same model for both directions (NLLB is bidirectional)
+            self.en_to_si_tokenizer = self.si_to_en_tokenizer
+            self.en_to_si_model = self.si_to_en_model
             
             # Language detector
             self.language_detector = langdetect
             
             logger.info("✓ All translation models loaded successfully")
+            logger.info("  Sinhala code: sin_Sinh | English code: eng_Latn")
             
         except ImportError as e:
             logger.error(f"Missing dependencies: {e}")
@@ -437,7 +440,10 @@ class TranslationService:
             return translated
         
         try:
-            # Standard Sinhala Unicode → English translation
+            # Standard Sinhala Unicode → English translation using NLLB
+            # Set source language to Sinhala
+            self.si_to_en_tokenizer.src_lang = "sin_Sinh"
+            
             # Tokenize
             inputs = self.si_to_en_tokenizer(
                 text, 
@@ -447,11 +453,14 @@ class TranslationService:
                 max_length=512
             ).to(self.device)
             
-            # Generate translation
-            outputs = self.si_to_en_model.generate(**inputs)
+            # Generate translation with target language forced to English
+            translated_tokens = self.si_to_en_model.generate(
+                **inputs,
+                forced_bos_token_id=self.si_to_en_tokenizer.lang_code_to_id["eng_Latn"]
+            )
             
             # Decode
-            translated = self.si_to_en_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            translated = self.si_to_en_tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
             
             logger.info(f"Translated (si→en): {text[:50]}... → {translated[:50]}...")
             return translated.strip()
@@ -475,6 +484,10 @@ class TranslationService:
             return text
         
         try:
+            # English → Sinhala translation using NLLB
+            # Set source language to English
+            self.en_to_si_tokenizer.src_lang = "eng_Latn"
+            
             # Tokenize
             inputs = self.en_to_si_tokenizer(
                 text, 
@@ -484,11 +497,14 @@ class TranslationService:
                 max_length=512
             ).to(self.device)
             
-            # Generate translation
-            outputs = self.en_to_si_model.generate(**inputs)
+            # Generate Sinhala translation with target language forced to Sinhala
+            translated_tokens = self.en_to_si_model.generate(
+                **inputs,
+                forced_bos_token_id=self.en_to_si_tokenizer.lang_code_to_id["sin_Sinh"]
+            )
             
             # Decode
-            translated = self.en_to_si_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            translated = self.en_to_si_tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
             
             logger.info(f"Translated (en→si): {text[:50]}... → {translated[:50]}...")
             return translated.strip()
