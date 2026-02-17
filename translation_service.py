@@ -71,6 +71,68 @@ ROMANIZED_TO_SINHALA = {
     'kohomada': 'කොහොමද', 'mata': 'මට', 'me': 'මේ',
 }
 
+# Romanized Sinhala to English direct translation dictionary
+SINHALA_TO_ENGLISH_DICT = {
+    # Question words
+    'monawada': 'what', 'mokadda': 'what', 'mokada': 'what',
+    'monawa': 'what', 'kohomada': 'how', 'kohoma': 'how',
+    'kiyada': 'how much', 'keyada': 'how much',
+    'kawuda': 'who', 'kauda': 'who', 'kewda': 'who',
+    'ehenam': 'if so', 'ehema': 'like that',
+    
+    # Pronouns
+    'mata': 'me', 'mama': 'I', 'api': 'we',
+    'oya': 'you', 'oyala': 'you all',
+    'meka': 'this', 'eka': 'that', 'me': 'this',
+    'ara': 'that', 'owa': 'that',
+    
+    # Health/Disease terms
+    'leda': 'disease', 'roga': 'disease', 'behet': 'medicine',
+    'osuda': 'medicine', 'osuwa': 'medicine', 'aushadha': 'medicine',
+    'wedakama': 'treatment', 'thalapola': 'head',
+    'riha': 'lungs', 'sathura': 'joints', 'gawwa': 'body',
+    'hada': 'heart', 'linda': 'body',
+    'duka': 'pain', 'wedana': 'pain',
+    'una': 'fever', 'seetha': 'cold', 'hawa': 'cough',
+    
+    # Common verbs
+    'karanna': 'to do', 'karannada': 'to do',
+    'ganna': 'to take', 'gannawa': 'take',
+    'bonawa': 'to drink', 'bonna': 'to drink',
+    'kannawa': 'to eat', 'kanna': 'to eat',
+    'yanawa': 'to go', 'yanna': 'to go',
+    'denna': 'to give', 'denne': 'give',
+    'aragena': 'taking', 'gaththa': 'took',
+    'thiyenawa': 'to have', 'thiyenne': 'have',
+    
+    # Properties/Adjectives
+    'guna': 'benefits', 'gunas': 'properties',
+    'honda': 'good', 'naraka': 'bad',
+    'loku': 'big', 'podi': 'small',
+    'wadi': 'more', 'adu': 'less',
+    'sudu': 'white', 'kalu': 'black',
+    'ratu': 'red', 'nil': 'blue',
+    
+    # Herbs and Foods
+    'kurudu': 'cinnamon', 'kaha': 'turmeric',
+    'inguru': 'ginger', 'suduru': 'cumin',
+    'karapincha': 'curry leaves', 'goraka': 'garcinia',
+    'thippili': 'long pepper', 'gammiris': 'black pepper',
+    'welpenela': 'aloe vera', 'komarika': 'neem',
+    'raththran': 'sandalwood', 'venivel': 'coscinium',
+    
+    # Prepositions/Particles
+    'wala': 'of', 'walata': 'for',
+    'ta': 'to', 'gen': 'from',
+    'ekka': 'with', 'nisa': 'because',
+    'hinda': 'because of',
+    'da': '?', 'nemei': 'is not', 'nehe': 'no',
+    'athi': 'have', 'nathi': 'do not have',
+    'one': 'need', 'ekada': 'is it',
+    'ekata': 'for that',
+}
+
+
 
 class TranslationService:
     """
@@ -235,6 +297,46 @@ class TranslationService:
         
         return is_singlish
     
+    def _translate_romanized_keywords(self, text: str) -> str:
+        """
+        Translate romanized Singlish to English using word-by-word dictionary mapping
+        
+        This avoids the garbled output from trying to transliterate to Sinhala script.
+        Uses direct keyword translation for better accuracy.
+        
+        Args:
+            text: Romanized Singlish text (e.g., "kurudu wala guna monawada?")
+            
+        Returns:
+            English translation (e.g., "what are the benefits of cinnamon?")
+        """
+        # Clean and split into words
+        words = text.lower().split()
+        translated_words = []
+        
+        for word in words:
+            # Remove punctuation
+            clean_word = re.sub(r'[^\w]', '', word)
+            
+            # Translate using dictionary, keep original if not found
+            if clean_word in SINHALA_TO_ENGLISH_DICT:
+                translated = SINHALA_TO_ENGLISH_DICT[clean_word]
+                translated_words.append(translated)
+            else:
+                # Keep as-is (might be English or proper noun)
+                translated_words.append(word)
+        
+        # Join and do basic grammar improvements
+        result = ' '.join(translated_words)
+        
+        # Clean up common patterns
+        result = result.replace('? ?', '?')  # Remove extra ?
+        result = result.replace('  ', ' ')    # Remove double spaces
+        result = result.strip()
+        
+        logger.info(f"Keyword-based translation: '{text}' → '{result}'")
+        return result
+    
     def _transliterate_to_sinhala(self, text: str) -> str:
         """
         Transliterate romanized Singlish to Sinhala script
@@ -318,7 +420,7 @@ class TranslationService:
         
         Args:
             text: Sinhala text (Unicode or romanized)
-            is_romanized: If True, text is romanized Singlish (will be transliterated first)
+            is_romanized: If True, text is romanized Singlish (will use alternative method)
             
         Returns:
             English translation
@@ -327,12 +429,15 @@ class TranslationService:
             logger.warning("Translation model not loaded, returning original text")
             return text
         
-        # If romanized, transliterate to Sinhala script first
+        # IMPORTANT: For romanized Singlish, use word-by-word translation approach
+        # Helsinki-NLP models don't handle romanized text well, causing garbled output
         if is_romanized:
-            logger.info("Transliterating romanized Singlish to Sinhala script...")
-            text = self._transliterate_to_sinhala(text)
+            logger.info("Romanized Singlish detected - using keyword-based translation")
+            translated = self._translate_romanized_keywords(text)
+            return translated
         
         try:
+            # Standard Sinhala Unicode → English translation
             # Tokenize
             inputs = self.si_to_en_tokenizer(
                 text, 

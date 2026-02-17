@@ -352,21 +352,28 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
             formatted_citations.append(citation)
         
         # === TRANSLATION: Translate answer back to user's language ===
-        display_answer = final_answer  # English version
+        display_answer = final_answer  # Default: English version
         
         if self.enable_translation and self.translator and detected_language == 'si':
-            # Translate answer back to Sinhala
-            print("🔄 Translating answer to Sinhala...")
-            display_answer = self.translator.translate_en_to_si(final_answer)
-            print(f"✓ Translation complete: {display_answer[:100]}...")
+            # For romanized Singlish, keep answer in English 
+            # (user typed in English letters, likely can't read Sinhala script)
+            if is_romanized:
+                print("📝 Romanized input detected - returning answer in English")
+                display_answer = final_answer  # Keep English
+            else:
+                # For Sinhala Unicode input, translate answer back to Sinhala
+                print("🔄 Translating answer to Sinhala...")
+                display_answer = self.translator.translate_en_to_si(final_answer)
+                print(f"✓ Translation complete: {display_answer[:100]}...")
         
         response = {
-            "answer": display_answer,  # Answer in user's language
+            "answer": display_answer,  # Answer in appropriate language
             "answer_english": final_answer,  # Always keep English version
             "base_answer": base_answer,
             "original_question": original_question,
             "translated_question": question if detected_language == 'si' else None,
             "detected_language": detected_language,
+            "is_romanized": is_romanized if detected_language == 'si' else False,
             "citations": formatted_citations,
             "sources": top_context_docs,
             "all_sources": retrieved_docs,
