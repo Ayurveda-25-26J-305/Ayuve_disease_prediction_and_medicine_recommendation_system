@@ -355,19 +355,14 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
         display_answer = final_answer  # Default: English version
         
         if self.enable_translation and self.translator and detected_language == 'si':
-            # For romanized Singlish, keep answer in English 
-            # (user typed in English letters, likely can't read Sinhala script)
-            if is_romanized:
-                print("📝 Romanized input detected - returning answer in English")
-                display_answer = final_answer  # Keep English
-            else:
-                # For Sinhala Unicode input, translate answer back to Sinhala
-                print("🔄 Translating answer to Sinhala...")
-                display_answer = self.translator.translate_en_to_si(final_answer)
-                print(f"✓ Translation complete: {display_answer[:100]}...")
+            # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
+            # Workflow: Singlish/Sinhala input → English processing → Sinhala output
+            print("🔄 Translating answer to Sinhala...")
+            display_answer = self.translator.translate_en_to_si(final_answer)
+            print(f"✓ Translation complete: {display_answer[:100]}...")
         
         response = {
-            "answer": display_answer,  # Answer in appropriate language
+            "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
             "answer_english": final_answer,  # Always keep English version
             "base_answer": base_answer,
             "original_question": original_question,
