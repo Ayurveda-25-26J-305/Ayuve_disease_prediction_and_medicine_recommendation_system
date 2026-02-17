@@ -454,9 +454,12 @@ class TranslationService:
             ).to(self.device)
             
             # Generate translation with target language forced to English
+            # Get the token ID for English (NLLB uses language tokens like "eng_Latn")
+            eng_token_id = self.si_to_en_tokenizer.convert_tokens_to_ids("eng_Latn")
+            
             translated_tokens = self.si_to_en_model.generate(
                 **inputs,
-                forced_bos_token_id=self.si_to_en_tokenizer.lang_code_to_id["eng_Latn"]
+                forced_bos_token_id=eng_token_id
             )
             
             # Decode
@@ -498,9 +501,12 @@ class TranslationService:
             ).to(self.device)
             
             # Generate Sinhala translation with target language forced to Sinhala
+            # Get the token ID for Sinhala (NLLB uses language tokens like "sin_Sinh")
+            sin_token_id = self.en_to_si_tokenizer.convert_tokens_to_ids("sin_Sinh")
+            
             translated_tokens = self.en_to_si_model.generate(
                 **inputs,
-                forced_bos_token_id=self.en_to_si_tokenizer.lang_code_to_id["sin_Sinh"]
+                forced_bos_token_id=sin_token_id
             )
             
             # Decode
