@@ -253,7 +253,8 @@ Related Question: {question}
             return translated_text  # Return original if cleanup removed everything
         
         return '\n'.join(cleaned_lines)
-        def answer_question(
+    
+    def answer_question(
         self, 
         question: str, 
         vector_db, 
