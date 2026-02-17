@@ -181,9 +181,78 @@ Related Question: {question}
             else:
                 formatted_lines.append(line)
         
-        return '\n'.join(formatted_lines).strip()
-    
-    def answer_question(
+        # === DEDUPLICATION: Remove similar/repetitive bullets ===
+        unique_lines = []
+        seen_keywords = set()
+        
+        for line in formatted_lines:
+            if not line.strip() or not line.strip().startswith('-'):
+                unique_lines.append(line)
+                continue
+            
+            # Extract key terms (nouns, important words)
+            content = re.sub(r'^-\s+', '', line.strip()).lower()
+            # Extract main keywords (words longer than 4 chars, excluding common words)
+            words = re.findall(r'\b\w{5,}\b', content)
+            
+            # Skip bullet if it's too similar to previous ones
+            keywords = set(words)
+            if keywords:
+                # Check overlap with seen keywords
+                overlap = len(keywords & seen_keywords) / len(keywords)
+                if overlap < 0.6:  # Less than 60% overlap = unique enough
+                    unique_lines.append(line)
+                    seen_keywords.update(keywords)
+            else:
+                unique_lines.append(line)
+        
+        return '\n'.join(unique_lines).strip()
+        def _cleanup_translated_answer(self, translated_text: str) -> str:
+        """
+        Post-process translated Sinhala text to fix common issues:
+        - Remove incomplete sentences
+        - Fix formatting
+        - Remove English artifact words
+        """
+        import re
+        
+        if not translated_text or not translated_text.strip():
+            return ""
+        
+        # Split into lines
+        lines = translated_text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Skip very short incomplete lines (likely cut off)
+            if line.startswith('-') and len(line) < 20:
+                continue
+            
+            # Check if line ends properly (Sinhala sentence should end with specific chars)
+            # Common Sinhala endings: ය, ති, ත, ට, ද, ම, න, ව, etc.
+            if line.startswith('-'):
+                content = line[1:].strip()
+                # If doesn't end with Sinhala character or punctuation, likely incomplete
+                if content and not re.search(r'[\u0D80-\u0DFF.!?]$', content):
+                    # Try to add period if it's somewhat complete
+                    if len(content) > 40:  # Reasonable length
+                        line = line.rstrip() + '.'
+                    else:
+                        # Too short and incomplete, skip it
+                        continue
+            
+            cleaned_lines.append(line)
+        
+        # Ensure we have at least some content
+        if not cleaned_lines:
+            return translated_text  # Return original if cleanup removed everything
+        
+        return '\n'.join(cleaned_lines)
+        def answer_question(
         self, 
         question: str, 
         vector_db, 
@@ -264,15 +333,17 @@ CONTENT RULES (MUST FOLLOW):
 1. Use ONLY information from the Ayurvedic Knowledge sources provided below
 2. Paraphrase the source content clearly but stay close to the original meaning
 3. Do not add information not present in the sources
-4. If sources mention specific terms, ingredients, or practices, include them in your answer
+4. Each point must be UNIQUE - do not repeat similar information
+5. Focus on different aspects (benefits, usage, effects, preparation, etc.)
 
 FORMATTING RULES (MUST FOLLOW):
 1. Start each point with a bullet (•) or dash (-)
-2. Write 3-5 separate points, each on a NEW LINE
+2. Write 3-5 DISTINCT points, each on a NEW LINE
 3. Each point should be ONE complete sentence (15-30 words maximum)
-4. Use simple, clear language - avoid technical jargon unless it appears in sources
+4. Use simple, clear language - avoid excessive repetition
 5. DO NOT write run-on sentences or combine multiple ideas in one point
 6. End each sentence with a period before starting the next point
+7. Ensure EACH point discusses a DIFFERENT aspect or benefit
 
 EXAMPLE FORMAT:
 - First benefit explained in one clear sentence using information from sources.
@@ -358,7 +429,10 @@ Based on the above sources, provide a well-structured answer with 3-5 bullet poi
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
             # Workflow: Singlish/Sinhala input → English processing → Sinhala output
             print("🔄 Translating answer to Sinhala...")
-            display_answer = self.translator.translate_en_to_si(final_answer)
+            raw_translation = self.translator.translate_en_to_si(final_answer)
+            
+            # Clean up translated text (remove incomplete sentences, fix formatting)
+            display_answer = self._cleanup_translated_answer(raw_translation)
             print(f"✓ Translation complete: {display_answer[:100]}...")
         
         response = {
