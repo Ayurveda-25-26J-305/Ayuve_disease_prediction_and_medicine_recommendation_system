@@ -67,8 +67,8 @@ class LLMArchitecture:
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                    do_sample=False,  # Greedy for deterministic output
-                    repetition_penalty=1.15,
+                    do_sample=False,  # Greedy for deterministic, coherent output
+                    repetition_penalty=1.08,  # Lower penalty to avoid incoherent rambling
                     no_repeat_ngram_size=3,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
@@ -81,8 +81,8 @@ class LLMArchitecture:
                     **inputs,
                     max_new_tokens=max_new_tokens or 64,  # Use requested tokens
                     do_sample=False,  # Greedy for coherent output
-                    repetition_penalty=1.25,
-                    no_repeat_ngram_size=4,
+                    repetition_penalty=1.10,  # Lower penalty for better coherence
+                    no_repeat_ngram_size=3,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=False

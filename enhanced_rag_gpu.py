@@ -89,6 +89,79 @@ Related Question: {question}
         
         return "\n\n".join(context_blocks)
     
+    def _format_answer(self, raw_answer: str) -> str:
+        """
+        Post-process generated answer to ensure quality formatting.
+        Fixes run-on sentences, ensures bullet points, and improves readability.
+        """
+        if not raw_answer or not raw_answer.strip():
+            return ""
+        
+        import re
+        
+        # Remove any leading/trailing whitespace
+        answer = raw_answer.strip()
+        
+        # If answer doesn't have bullet points, try to add them
+        if not any(answer.startswith(c) for c in ['-', '•', '*', '1.', '2.']):
+            # Split by periods followed by capital letters (likely sentence boundaries)
+            sentences = re.split(r'\.(?=[A-Z])', answer)
+            if len(sentences) > 2:
+                # Format as bullet points
+                answer = '\n'.join([f"- {s.strip()}." for s in sentences if len(s.strip()) > 10])
+            else:
+                # Single sentence - just add bullet
+                answer = f"- {answer}" if not answer.startswith('-') else answer
+        
+        # Fix excessive run-on sentences (sentences longer than 200 chars)
+        lines = answer.split('\n')
+        formatted_lines = []
+        
+        for line in lines:
+            if len(line) > 200 and '.' not in line[-50:]:
+                # This is a run-on sentence without proper ending
+                # Split at conjunctions or commas
+                parts = re.split(r'(?<=\w)(?:,\s+(?:and|while|also|by|through|including|thereby|hence|thus))', line, maxsplit=2)
+                for part in parts[:3]:  # Limit to first 3 points
+                    if len(part.strip()) > 15:
+                        clean_part = part.strip()
+                        if not clean_part.endswith('.'):
+                            clean_part += '.'
+                        if not clean_part.startswith(('-', '•', '*')):
+                            clean_part = f"- {clean_part}"
+                        formatted_lines.append(clean_part)
+            else:
+                formatted_lines.append(line)
+        
+        # Rejoin and clean up
+        answer = '\n'.join(formatted_lines)
+        
+        # Ensure bullet points are consistent
+        answer = re.sub(r'^\*\s+', '- ', answer, flags=re.MULTILINE)
+        answer = re.sub(r'^•\s+', '- ', answer, flags=re.MULTILINE)
+        
+        # Remove excessive whitespace
+        answer = re.sub(r'\n{3,}', '\n\n', answer)
+        
+        # Capitalize first letter of each bullet point
+        lines = answer.split('\n')
+        formatted_lines = []
+        for line in lines:
+            if line.strip().startswith('-'):
+                # Extract bullet and content
+                match = re.match(r'^(-\s+)(.+)$', line)
+                if match:
+                    bullet, content = match.groups()
+                    # Capitalize first letter
+                    content = content[0].upper() + content[1:] if content else content
+                    formatted_lines.append(f"{bullet}{content}")
+                else:
+                    formatted_lines.append(line)
+            else:
+                formatted_lines.append(line)
+        
+        return '\n'.join(formatted_lines).strip()
+    
     def answer_question(
         self, 
         question: str, 
@@ -125,13 +198,13 @@ Related Question: {question}
         context_length = sum(len(d.get("text", "")) for d in top_context_docs)
         question_length = len(question)
         
-        # Adjusted tokens to ensure complete, summarized answers
+        # Production-grade token allocation for complete, coherent answers
         if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 350  # Complete detailed summary
+            dynamic_tokens = 450  # Detailed answers with proper structure
         elif context_length > 1000:
-            dynamic_tokens = 300  # Complete moderate summary
+            dynamic_tokens = 400  # Moderate answers with complete points
         else:
-            dynamic_tokens = 250  # Complete brief summary
+            dynamic_tokens = 350  # Brief but complete answers
             
         print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
         
@@ -140,26 +213,38 @@ Related Question: {question}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Use Phi-3's chat format properly
-        context_summary = context_text[:2500]  # Increased context for better answers
-        prompt = f"""<|system|>You are an Ayurvedic expert. Answer in a clear, summarized format:
-- Use 3-5 complete points
-- Each point should be one clear sentence (15-25 words)
-- Focus on essential information only
-- Avoid repetition and filler words
-- Be direct and specific<|end|>
+        # Use Phi-3's chat format with strict formatting rules
+        context_summary = context_text[:3000]  # More context for better understanding
+        prompt = f"""<|system|>You are an Ayurvedic expert providing clear, professional answers.
+
+FORMATTING RULES (MUST FOLLOW):
+1. Start each point with a bullet (•) or dash (-)
+2. Write 3-5 separate points, each on a NEW LINE
+3. Each point should be ONE complete sentence (15-30 words maximum)
+4. Use simple, clear language - avoid technical jargon unless necessary
+5. DO NOT write run-on sentences or combine multiple ideas in one point
+6. End each sentence with a period before starting the next point
+
+EXAMPLE FORMAT:
+- First benefit explained in one clear sentence.
+- Second benefit with specific details.
+- Third benefit focusing on practical application.<|end|>
 <|user|>Ayurvedic Knowledge:
 {context_summary}
 
 Question: {question}
 
-Provide a summarized answer with key points:<|end|>
-<|assistant|>"""
+Provide a well-structured answer with 3-5 bullet points:<|end|>
+<|assistant|>
+"""
         
 
         # Generate answer with dynamic token adjustment
         print("💭 Generating answer...")
-        base_answer = self.llm.generate(prompt, max_new_tokens=dynamic_tokens)
+        raw_answer = self.llm.generate(prompt, max_new_tokens=dynamic_tokens)
+        
+        # Post-process answer for quality and formatting
+        base_answer = self._format_answer(raw_answer)
         
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
@@ -167,6 +252,7 @@ Provide a summarized answer with key points:<|end|>
         
         if not base_answer or len(base_answer.strip()) < 10:
             print("⚠️  WARNING: Generated answer is empty or too short!")
+            print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
             print(f"   Prompt used: {prompt[:500]}...")
         
         # Validate
