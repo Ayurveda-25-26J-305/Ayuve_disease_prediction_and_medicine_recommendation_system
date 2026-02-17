@@ -5,7 +5,7 @@ Run this to rebuild the vector database with proper chapter/verse metadata
 
 import os
 import shutil
-from build_vector_db import main as build_db
+from build_vector_db import build_complete_database
 
 def rebuild_database():
     """
@@ -16,22 +16,24 @@ def rebuild_database():
     print("=" * 60)
     
     # Backup old database if it exists
-    if os.path.exists('vector_db'):
-        backup_path = 'vector_db_backup'
-        if os.path.exists(backup_path):
-            print(f"Removing old backup: {backup_path}")
-            shutil.rmtree(backup_path)
-        
-        print(f"Backing up current database to: {backup_path}")
-        shutil.copytree('vector_db', backup_path)
-        
-        # Remove old database
-        print("Removing old database...")
-        shutil.rmtree('vector_db')
+    old_paths = ['vector_db', 'faiss_index']
+    for old_path in old_paths:
+        if os.path.exists(old_path):
+            backup_path = f'{old_path}_backup'
+            if os.path.exists(backup_path):
+                print(f"Removing old backup: {backup_path}")
+                shutil.rmtree(backup_path)
+            
+            print(f"Backing up current database to: {backup_path}")
+            shutil.copytree(old_path, backup_path)
+            
+            # Remove old database
+            print(f"Removing old database: {old_path}")
+            shutil.rmtree(old_path)
     
     # Build new database
     print("\nBuilding new vector database with improved chapter detection...")
-    build_db()
+    build_complete_database()
     
     print("\n" + "=" * 60)
     print("✅ DATABASE REBUILD COMPLETE!")
