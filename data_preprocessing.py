@@ -187,6 +187,20 @@ class BookProcessor:
         
         if detected_chapters:
             # Process text by chapters
+            # First, handle any content BEFORE the first chapter (preface, intro, etc.)
+            first_chapter_start = detected_chapters[0].start()
+            if first_chapter_start > 0:
+                preface_text = text[:first_chapter_start].strip()
+                if preface_text and len(preface_text) > 50:  # Include if any substantial content
+                    print(f"   Found preface/introduction ({len(preface_text)} chars)")
+                    preface_chunks = self.chunker.chunk_text(
+                        text=preface_text,
+                        source=book_name,
+                        metadata={"chapter": "Introduction", "section": "Preface"}
+                    )
+                    all_chunks.extend(preface_chunks)
+            
+            # Now process each chapter
             for i, match in enumerate(detected_chapters):
                 chapter_num = chapter_nums[i]
                 start_pos = match.end()
@@ -210,8 +224,16 @@ class BookProcessor:
                 source=book_name,
                 metadata={"book": book_name}
             )
+                metadata={"book": book_name}
+            )
         
         print(f"   Created {len(all_chunks)} chunks")
+        
+        # Debug logging
+        if len(all_chunks) == 0:
+            print(f"   ⚠️  WARNING: No chunks created for {book_name}!")
+            print(f"   Text length: {len(text)} chars")
+        
         return all_chunks
     
     def process_structured_text(self,
