@@ -201,18 +201,21 @@ export default function Home() {
               <div className="example-questions">
                 <p className="example-label">Try asking:</p>
                 <button
+                  suppressHydrationWarning
                   className="example-btn"
                   onClick={() => askExample("What causes Vata imbalance?")}
                 >
                   What causes Vata imbalance?
                 </button>
                 <button
+                  suppressHydrationWarning
                   className="example-btn"
                   onClick={() => askExample("How to treat Pitta disorders?")}
                 >
                   How to treat Pitta disorders?
                 </button>
                 <button
+                  suppressHydrationWarning
                   className="example-btn"
                   onClick={() =>
                     askExample("What are the properties of Kapha dosha?")
@@ -246,13 +249,14 @@ export default function Home() {
         <div className="input-area">
           <form className="input-wrapper" onSubmit={handleSubmit}>
             <input
+              suppressHydrationWarning
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask your Ayurvedic question..."
               disabled={loading}
             />
-            <button type="submit" disabled={loading}>
+            <button suppressHydrationWarning type="submit" disabled={loading}>
               <span className="send-icon">{loading ? "⏳" : "🌿"}</span>
               <span>{loading ? "Thinking..." : "Ask"}</span>
             </button>
