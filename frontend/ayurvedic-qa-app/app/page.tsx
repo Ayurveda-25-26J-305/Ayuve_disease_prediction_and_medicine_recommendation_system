@@ -78,9 +78,9 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // Add timeout of 120 seconds
+      // Add timeout of 5 minutes (300 seconds)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       const response = await fetch(`/api/ask`, {
         method: "POST",

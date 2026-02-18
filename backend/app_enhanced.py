@@ -195,7 +195,9 @@ def ask_question():
                 "error": "Question cannot be empty"
             }), 400
         
-        print(f"\n🔍 Question: {question}")
+        print(f"\n" + "=" * 70)
+        print(f"🔍 Question: {question}")
+        print(f"🔍 Retrieving relevant sources...")
         
         # Load user profile if user_id provided
         user_profile = None
@@ -203,6 +205,8 @@ def ask_question():
             user_profile = rag_system.load_user_profile(user_id)
             if user_profile:
                 print(f"👤 User profile loaded: {user_profile['dominant_dosha']}")
+        
+        print(f"💭 Generating answer...")
         
         # Get enhanced answer with validation and personalization
         response = rag_system.answer_question(
@@ -219,8 +223,11 @@ def ask_question():
             formatted = format_citation(citation_dict)
             citations.append(formatted)
         
+        print(f"✅ Generation complete!")
+        print(f"   Answer length: {len(response['answer'])} chars")
+        print(f"   Answer preview: {response['answer'][:200]}...")
+        print(f"✓ Validating answer across sources...")
         print(f"✓ Answer generated")
-        print(f"  Detected language: {response.get('detected_language', 'en').upper()}")
         print(f"  Confidence: {response['validation']['confidence']}%")
         print(f"  Personalized: {response['personalized']}")
         print(f"  Citations: {len(citations)}")
