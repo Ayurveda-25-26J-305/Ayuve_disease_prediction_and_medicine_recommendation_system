@@ -83,9 +83,14 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Add timeout of 120 seconds
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+
       const response = await fetch(`${API_BASE_URL}/api/ask`, {
         method: "POST",
         mode: "cors",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           "bypass-tunnel-reminder": "true",
@@ -93,6 +98,8 @@ export default function Home() {
         },
         body: JSON.stringify({ question }),
       });
+
+      clearTimeout(timeoutId);
 
       console.log("Response status:", response.status);
       console.log("Response OK:", response.ok);
@@ -133,12 +140,16 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Error in askQuestion:", error);
+      const errorMessage =
+        error instanceof Error && error.name === "AbortError"
+          ? "⏱️ Request timed out. The server is taking too long to respond. Try a simpler question."
+          : "❌ Failed to connect to server. Make sure the backend is running.";
+
       setMessages((prev) => [
         ...prev,
         {
           type: "answer",
-          content:
-            "❌ Failed to connect to server. Make sure the backend is running.",
+          content: errorMessage,
         },
       ]);
     }

@@ -78,13 +78,13 @@ def initialize_system():
     print("\n🔄 Loading Enhanced LLM (this may take a minute)...")
     rag_system = EnhancedAyurvedicRAG(
         llm_model_name=config['llm_model'],
-        max_new_tokens=config.get('max_new_tokens', 64),
+        max_new_tokens=config.get('max_new_tokens', 128),
         enable_validation=True,
         enable_personalization=True,
-        enable_translation=True,  # Enable Sinhala ↔ English translation
+        enable_translation=False,  # Disabled to save GPU memory
         embedding_model=config['embedding_model']
     )
-    print("✓ Enhanced LLM initialized (Validation + Personalization + Translation enabled)")
+    print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
     
     print("\n" + "=" * 70)
     print("✓ Backend ready to serve requests")
