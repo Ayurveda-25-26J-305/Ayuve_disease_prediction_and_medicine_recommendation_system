@@ -20,11 +20,12 @@ import yaml
 
 app = Flask(__name__)
 # Enable CORS for frontend with credentials support
+# Allow all origins for Localtunnel compatibility
 CORS(app, resources={r"/*": {
-    "origins": ["http://localhost:3000", "http://localhost:3001", "https://ayurvedic-qa.loca.lt"],
+    "origins": "*",  # Allow all origins (needed for Localtunnel)
     "methods": ["GET", "POST", "OPTIONS"],
     "allow_headers": ["Content-Type", "Bypass-Tunnel-Reminder", "ngrok-skip-browser-warning"],
-    "supports_credentials": True
+    "supports_credentials": False  # Set to False when using "*" origin
 }})
 
 # Global variables for system components
