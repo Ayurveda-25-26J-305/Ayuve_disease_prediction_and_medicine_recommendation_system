@@ -49,7 +49,6 @@ export default function Home() {
       console.log("Fetching stats from:", `${API_BASE_URL}/api/stats`);
       const response = await fetch(`${API_BASE_URL}/api/stats`, {
         mode: "cors",
-        credentials: "include",
         headers: {
           "Bypass-Tunnel-Reminder": "true",
           "ngrok-skip-browser-warning": "true",
@@ -87,7 +86,6 @@ export default function Home() {
       const response = await fetch(`${API_BASE_URL}/api/ask`, {
         method: "POST",
         mode: "cors",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Bypass-Tunnel-Reminder": "true",
