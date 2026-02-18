@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const API_BASE_URL = "https://earlier-pvc-least-tagged.trycloudflare.com";
+const API_BASE_URL = "https://grey-eligibility-concert-prescription.trycloudflare.com";
 
 interface Message {
   type: "question" | "answer";
