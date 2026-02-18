@@ -50,7 +50,7 @@ export default function Home() {
       const response = await fetch(`${API_BASE_URL}/api/stats`, {
         mode: "cors",
         headers: {
-          "Bypass-Tunnel-Reminder": "true",
+          "bypass-tunnel-reminder": "true",
           "ngrok-skip-browser-warning": "true",
         },
       });
@@ -88,7 +88,7 @@ export default function Home() {
         mode: "cors",
         headers: {
           "Content-Type": "application/json",
-          "Bypass-Tunnel-Reminder": "true",
+          "bypass-tunnel-reminder": "true",
           "ngrok-skip-browser-warning": "true",
         },
         body: JSON.stringify({ question }),
