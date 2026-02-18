@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+// Use local proxy routes to avoid Localtunnel browser auth
+const API_BASE_URL = "";
 
 interface Message {
   type: "question" | "answer";
@@ -46,14 +47,8 @@ export default function Home() {
 
   const loadStats = async () => {
     try {
-      console.log("Fetching stats from:", `${API_BASE_URL}/api/stats`);
-      const response = await fetch(`${API_BASE_URL}/api/stats`, {
-        mode: "cors",
-        headers: {
-          "bypass-tunnel-reminder": "true",
-          "ngrok-skip-browser-warning": "true",
-        },
-      });
+      console.log("Fetching stats from: /api/stats (proxy)");
+      const response = await fetch(`/api/stats`);
       console.log("Stats response status:", response.status);
       const data = await response.json();
       console.log("Stats data received:", data);
@@ -87,14 +82,11 @@ export default function Home() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
 
-      const response = await fetch(`${API_BASE_URL}/api/ask`, {
+      const response = await fetch(`/api/ask`, {
         method: "POST",
-        mode: "cors",
         signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          "bypass-tunnel-reminder": "true",
-          "ngrok-skip-browser-warning": "true",
         },
         body: JSON.stringify({ question }),
       });
