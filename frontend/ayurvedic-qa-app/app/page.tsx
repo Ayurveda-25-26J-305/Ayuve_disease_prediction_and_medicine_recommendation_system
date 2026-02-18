@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const API_BASE_URL = "https://grey-eligibility-concert-prescription.trycloudflare.com";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 interface Message {
   type: "question" | "answer";
