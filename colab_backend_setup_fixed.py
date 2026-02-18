@@ -80,6 +80,19 @@ if backend_url:
     print("\n⚠️  IMPORTANT: Keep this cell running!")
     print("   If you stop it, the URL will stop working.\n")
     print("=" * 70)
+    
+    # KEEP THE CELL RUNNING - Wait for tunnel process
+    print("\n🔄 Backend is running... (This cell will stay active)")
+    print("   Press the ⏹️ Stop button to shut down the backend.\n")
+    
+    try:
+        # Wait indefinitely - this keeps the cell and processes alive
+        tunnel_process.wait()
+    except KeyboardInterrupt:
+        print("\n\n🛑 Shutting down backend...")
+        flask_process.kill()
+        tunnel_process.kill()
+        print("✅ Backend stopped")
 else:
     print("❌ Could not find tunnel URL")
     print("=" * 70)
