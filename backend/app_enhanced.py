@@ -252,6 +252,20 @@ def ask_question():
         print(f"  Answer length: {len(result['answer'])}")
         print(f"  Citations count: {len(result['citations'])}")
         
+        # Detailed answer display
+        print("\n" + "=" * 60)
+        print("ANSWER:")
+        print("=" * 60)
+        print(result['answer'])
+        print("\n" + "=" * 60)
+        print("VALIDATION METRICS:")
+        print("=" * 60)
+        validation = result.get('validation', {})
+        print(f"✅ Confidence: {validation.get('confidence', 0):.1f}%")
+        print(f"📊 Source Agreement: {validation.get('sources_agree', 0)}/{validation.get('sources_checked', 0)} sources agree")
+        print(f"📈 Confidence Level: {validation.get('confidence_level', 'N/A')}")
+        print("=" * 60 + "\n")
+        
         return jsonify(result)
         
     except Exception as e:
