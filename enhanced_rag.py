@@ -90,16 +90,11 @@ class LLMArchitecture:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Free fragmented GPU memory before generation
-        if self.device == "cuda":
-            gc.collect()
-            torch.cuda.empty_cache()
-
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=512  # Reduced from 2048 to limit KV cache memory spike
+            max_length=384  # Tighter budget: faster KV cache
         ).to(self.device)
 
         print(f"🔄 Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
@@ -232,9 +227,9 @@ Paragraph: {paragraph}
         self, 
         question: str, 
         vector_db, 
-        top_k: int = 5,
+        top_k: int = 3,
         user_profile: Optional[Dict[str, Any]] = None,
-        validation_top_k: int = 5
+        validation_top_k: int = 3
     ) -> Dict[str, Any]:
         """
         Answer question using RAG with validation and personalization

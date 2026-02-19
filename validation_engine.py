@@ -103,24 +103,28 @@ class ValidationEngine:
             List of agreement information for each source
         """
         agreements = []
-        
-        for doc in retrieved_docs:
-            # Get source text
-            source_text = doc.get('text', '')
+
+        if not retrieved_docs:
+            return agreements
+
+        # Batch-encode answer + all docs in one call (much faster than per-doc)
+        source_texts = [doc.get('text', '') for doc in retrieved_docs]
+        all_texts = [primary_answer] + source_texts
+        all_embeddings = self.encoder.encode(
+            all_texts,
+            normalize_embeddings=True,
+            batch_size=32,
+            show_progress_bar=False
+        )
+        answer_emb = all_embeddings[0]
+        doc_embs = all_embeddings[1:]
+
+        for i, doc in enumerate(retrieved_docs):
             source_name = doc.get('source', 'Unknown')
-            
-            # Calculate semantic similarity
-            similarity = self.calculate_semantic_similarity(
-                primary_answer, 
-                source_text
-            )
-            
-            # Determine if source agrees (threshold: 0.55 for paraphrased/summarized answers)
+            similarity = float(np.dot(answer_emb, doc_embs[i]))
             agrees = similarity > 0.55
-            
-            # Get source metadata
             metadata = doc.get('metadata', {})
-            
+
             agreement_info = {
                 'source': source_name,
                 'chapter': metadata.get('chapter', 'N/A'),
@@ -130,9 +134,8 @@ class ValidationEngine:
                 'agreement_level': self._get_agreement_level(similarity),
                 'source_weight': self.get_source_weight(source_name)
             }
-            
             agreements.append(agreement_info)
-        
+
         return agreements
     
     def _get_agreement_level(self, similarity: float) -> str:
