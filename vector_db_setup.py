@@ -27,8 +27,9 @@ class FAISSVectorDB:
             embedding_model_name: HuggingFace model name for embeddings
             index_path: Directory to save/load FAISS index
         """
-        print(f"Loading embedding model: {embedding_model_name}")
-        self.embedding_model = SentenceTransformer(embedding_model_name)
+        print(f"Loading embedding model: {embedding_model_name} (CPU)")
+        # Force CPU to save GPU memory for the main LLM
+        self.embedding_model = SentenceTransformer(embedding_model_name, device="cpu")
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
         self.index_path = index_path
         

@@ -41,9 +41,10 @@ class ValidationEngine:
         Args:
             embedding_model_name: Name of the sentence transformer model to use
         """
-        logger.info(f"Initializing ValidationEngine with {embedding_model_name}")
-        self.encoder = SentenceTransformer(embedding_model_name)
-        logger.info("ValidationEngine initialized successfully")
+        logger.info(f"Initializing ValidationEngine with {embedding_model_name} on CPU")
+        # Force CPU to save GPU memory for the main LLM
+        self.encoder = SentenceTransformer(embedding_model_name, device="cpu")
+        logger.info("ValidationEngine initialized successfully (CPU)")
     
     def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
         """

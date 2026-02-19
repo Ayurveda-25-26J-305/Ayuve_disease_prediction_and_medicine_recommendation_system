@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,12 @@ class LLMArchitecture:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             config=model_config,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4"
+            ) if self.device == "cuda" else None,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else None,
             low_cpu_mem_usage=True,
