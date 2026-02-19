@@ -1,4 +1,5 @@
 import torch
+import gc
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
 import logging
 
@@ -58,14 +59,19 @@ class LLMArchitecture:
         logger.info("LLM initialized successfully")
 
     def generate(self, prompt: str, max_new_tokens: int = None) -> str:
+        # Free fragmented GPU memory before generation
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+            gc.collect()
+
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=2048  # Increased for longer context
+            max_length=512  # Keep prompt short to limit KV cache memory spike
         ).to(self.device)
 
-        print(" Generating response...")
+        print(f" Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
 
         with torch.inference_mode():
             # Try with cache first, fall back to no-cache if it fails
@@ -158,14 +164,12 @@ class AyurvedicRAG:
             chapter = meta.get("chapter", "N/A")
             paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
 
-            block = f"""
-[Source {i}]
-Book: {book}
-Chapter: {chapter}
-Paragraph: {paragraph}
+            # Truncate text to keep total prompt within 512 tokens
+            text = doc.get("text", "")
+            if len(text) > 300:
+                text = text[:300] + "..."
 
-{doc.get("text", "")}
-"""
+            block = f"[Source {i}] {book}\n{text}"
             context_blocks.append(block.strip())
 
         return "\n\n".join(context_blocks)
