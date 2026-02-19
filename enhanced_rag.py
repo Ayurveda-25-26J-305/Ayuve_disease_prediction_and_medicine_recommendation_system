@@ -94,7 +94,7 @@ class LLMArchitecture:
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=384  # Tighter budget: faster KV cache
+            max_length=768  # Safe with 4-bit (2.5GB model, 15GB total)
         ).to(self.device)
 
         print(f"🔄 Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
@@ -104,6 +104,7 @@ class LLMArchitecture:
                 **inputs,
                 max_new_tokens=self.config.get("max_new_tokens", 128),
                 do_sample=False,
+                repetition_penalty=1.3,
                 use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id
@@ -211,13 +212,16 @@ class EnhancedAyurvedicRAG:
             chapter = meta.get("chapter", "N/A")
             paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
 
+            # Limit each doc to 200 chars to keep total prompt under token budget
+            doc_text = doc.get("text", "")[:200]
+
             block = f"""
 [Source {i}]
 Book: {book}
 Chapter: {chapter}
 Paragraph: {paragraph}
 
-{doc.get("text", "")}
+{doc_text}
 """
             context_blocks.append(block.strip())
 
