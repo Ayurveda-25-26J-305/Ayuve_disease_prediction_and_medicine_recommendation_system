@@ -9,7 +9,8 @@ This module extends the existing AyurvedicRAG class with the new features.
 """
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import gc
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import logging
 from typing import Dict, Any, Optional
 
@@ -35,6 +36,7 @@ class LLMArchitecture:
         # Detect if CUDA is available
         has_cuda = torch.cuda.is_available()
         logger.info(f"CUDA available: {has_cuda}")
+        print(f"   Device: {'GPU (4-bit quantized)' if has_cuda else 'CPU'}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
@@ -42,15 +44,25 @@ class LLMArchitecture:
             trust_remote_code=True
         )
 
-        # Load model - let it decide device placement
+        # 4-bit quantization config — reduces Phi-3 from 8.8GB to ~2.5GB
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        ) if has_cuda else None
+
+        # Load model with 4-bit quantization
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
+            quantization_config=bnb_config,
             torch_dtype=torch.float16 if has_cuda else torch.float32,
             device_map="auto" if has_cuda else None,
             low_cpu_mem_usage=True,
             attn_implementation="eager",
             trust_remote_code=True
         )
+        print(f"   Model loaded with {'4-bit quantization' if has_cuda else 'CPU float32'}")
         
         # Get actual device from model (might be CPU even if CUDA available due to size)
         if hasattr(self.model, 'device'):
@@ -77,22 +89,27 @@ class LLMArchitecture:
         # Ensure tokenizer has pad token
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-        
+
+        # Free fragmented GPU memory before generation
+        if self.device == "cuda":
+            gc.collect()
+            torch.cuda.empty_cache()
+
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=2048  # Increased from 1024 to handle longer context
+            max_length=512  # Reduced from 2048 to limit KV cache memory spike
         ).to(self.device)
 
-        print("🔄 Generating response...")
+        print(f"🔄 Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
 
         with torch.inference_mode():
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=self.config.get("max_new_tokens", 64),
+                max_new_tokens=self.config.get("max_new_tokens", 128),
                 do_sample=False,
-                use_cache=False,  # Disable cache to avoid compatibility issues
+                use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id
             )
