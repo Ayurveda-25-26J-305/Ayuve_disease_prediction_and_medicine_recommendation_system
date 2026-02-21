@@ -109,39 +109,17 @@ class LLMArchitecture:
                 eos_token_id=self.tokenizer.eos_token_id
             )
 
-        # Decode full output
-        full_output = self.tokenizer.decode(
-            output_ids[0],
-            skip_special_tokens=True
-        )
-        
-        # Debug: Show what we got
-        if len(full_output) < 50:
-            print(f"⚠️ Warning: Output is very short ({len(full_output)} chars)")
-            print(f"   First 200 chars of prompt: {prompt[:200]}...")
-            print(f"   Output: '{full_output}'")
-        
-        # Extract only the assistant's reply (after <|assistant|> token)
-        if "<|assistant|>" in full_output:
-            generated_text = full_output.split("<|assistant|>")[-1].strip()
-        elif "<|end|>" in full_output:
-            # Some Phi-3 versions use <|end|> as separator
-            parts = full_output.split("<|end|>")
-            generated_text = parts[-1].strip() if parts[-1].strip() else parts[-2].strip()
-        elif len(full_output) > len(prompt):
-            generated_text = full_output[len(prompt):].strip()
-        else:
-            generated_text = full_output.strip()
-        
-        # Remove any trailing special tokens
-        for token in ["<|end|>", "<|endoftext|>", "<|user|>", "<|system|>"]:
-            generated_text = generated_text.replace(token, "").strip()
-        
-        # If still empty or very short, return full output
-        if not generated_text or len(generated_text) < 10:
-            print("⚠️ Warning: Extracted answer is too short, using full output")
-            generated_text = full_output.strip() if full_output.strip() else "Unable to generate answer. Please try with a simpler question."
-        
+        # Decode ONLY the new generated tokens (not the input prompt)
+        input_length = inputs['input_ids'].shape[1]
+        new_token_ids = output_ids[0][input_length:]
+        generated_text = self.tokenizer.decode(new_token_ids, skip_special_tokens=True).strip()
+
+        print(f"✅ Generated {len(new_token_ids)} new tokens")
+
+        if not generated_text or len(generated_text) < 5:
+            print("⚠️ Warning: Empty/very short answer generated")
+            generated_text = "Unable to generate answer. Please try a different question."
+
         return generated_text
 
 
