@@ -94,7 +94,7 @@ class LLMArchitecture:
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=768  # Safe with 4-bit (2.5GB model, 15GB total)
+            max_length=1024
         ).to(self.device)
 
         print(f"🔄 Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
@@ -102,9 +102,8 @@ class LLMArchitecture:
         with torch.inference_mode():
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=self.config.get("max_new_tokens", 128),
+                max_new_tokens=self.config.get("max_new_tokens", 80),
                 do_sample=False,
-                repetition_penalty=1.3,
                 use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id
@@ -122,25 +121,21 @@ class LLMArchitecture:
             print(f"   First 200 chars of prompt: {prompt[:200]}...")
             print(f"   Output: '{full_output}'")
         
-        # Extract only new generated text (remove prompt)
-        # Try to find where the "Answer:" section starts
-        answer_marker = "Answer:"
-        if answer_marker in full_output:
-            # Get everything after "Answer:"
-            parts = full_output.split(answer_marker)
-            if len(parts) > 1:
-                generated_text = parts[-1].strip()
-            else:
-                generated_text = full_output.strip()
-        elif full_output.startswith(prompt.strip()):
-            # Prompt is at beginning, remove it
-            generated_text = full_output[len(prompt.strip()):].strip()
+        # Extract only the assistant's reply (after <|assistant|> token)
+        if "<|assistant|>" in full_output:
+            generated_text = full_output.split("<|assistant|>")[-1].strip()
+        elif "<|end|>" in full_output:
+            # Some Phi-3 versions use <|end|> as separator
+            parts = full_output.split("<|end|>")
+            generated_text = parts[-1].strip() if parts[-1].strip() else parts[-2].strip()
         elif len(full_output) > len(prompt):
-            # Fallback: assume prompt is at start based on length
             generated_text = full_output[len(prompt):].strip()
         else:
-            # Last resort: use full output
             generated_text = full_output.strip()
+        
+        # Remove any trailing special tokens
+        for token in ["<|end|>", "<|endoftext|>", "<|user|>", "<|system|>"]:
+            generated_text = generated_text.replace(token, "").strip()
         
         # If still empty or very short, return full output
         if not generated_text or len(generated_text) < 10:
@@ -267,19 +262,23 @@ Paragraph: {paragraph}
         # Build context WITH citation metadata
         context_text = self._build_context_with_citations(top_context_docs)
         
-        # Generate answer prompt
-        prompt = f"""
-You are an Ayurvedic knowledge assistant.
-Answer the question strictly based on the context below.
+        # Generate answer prompt using Phi-3 chat template
+        messages = [
+            {
+                "role": "user",
+                "content": f"""You are an Ayurvedic knowledge assistant. Answer the question using only the context below. Be concise.
 
 Context:
 {context_text}
 
-Question:
-{question}
-
-Answer:
-""".strip()
+Question: {question}"""
+            }
+        ]
+        prompt = self.llm.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
         
         # STEP 2: Generate base answer (original RAG)
         print("💭 Generating answer...")
