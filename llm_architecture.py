@@ -90,7 +90,7 @@ class LLMArchitecture:
                 do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=True
+                use_cache=False  # DynamicCache.from_legacy_cache removed in newer transformers
             )
 
         # Decode only new tokens
@@ -117,7 +117,7 @@ class LLMArchitecture:
                 do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=True
+                use_cache=False  # DynamicCache.from_legacy_cache removed in newer transformers
             )
 
         # Decode only the newly generated tokens (excluding the input prompt)
