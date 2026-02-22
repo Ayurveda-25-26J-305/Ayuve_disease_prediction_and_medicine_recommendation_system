@@ -88,12 +88,16 @@ class LLMArchitecture:
 
         # use_cache=False: avoids DynamicCache.from_legacy_cache / seen_tokens
         # incompatibilities between Phi-3's bundled modeling_phi3.py and newer transformers.
+        # do_sample=True + temperature=0.1: breaks greedy repetition loop that occurs
+        # when use_cache=False causes position IDs to not advance cleanly in 4-bit models.
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 150),
-                do_sample=False,
+                do_sample=True,
+                temperature=0.1,
+                top_p=0.9,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
                 use_cache=False
