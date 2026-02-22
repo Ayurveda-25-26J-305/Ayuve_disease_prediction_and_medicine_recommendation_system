@@ -68,7 +68,7 @@ class LLMArchitecture:
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=512  # Keep prompt short to limit KV cache memory spike
+            max_length=1500  # Enough room for system prompt + context; Phi-3 has 4k window
         ).to(self.device)
 
         print(f" Generating response (input tokens: {inputs['input_ids'].shape[1]})...")

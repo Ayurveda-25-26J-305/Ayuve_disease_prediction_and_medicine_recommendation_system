@@ -91,20 +91,24 @@ class EnhancedAyurvedicRAG:
             if doc_type == "book":
                 chapter = meta.get("chapter", "N/A")
                 paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
+                # Cap text to 200 chars to keep total prompt within token budget
+                doc_text = doc.get("text", "")[:200]
                 block = f"""[Source {i}]
 Book: {book}
 Chapter: {chapter}
 Verse/Paragraph: {paragraph}
 
-{doc.get("text", "")}"""
+{doc_text}"""
             else:
                 # QA dataset entry
                 question = meta.get("question", "N/A")
+                # Cap text to 200 chars to keep total prompt within token budget
+                doc_text = doc.get("text", "")[:200]
                 block = f"""[Source {i}]
 Type: Ayurvedic Q&A Reference
 Related Question: {question}
 
-{doc.get("text", "")}"""
+{doc_text}"""
             
             context_blocks.append(block.strip())
         
@@ -472,7 +476,7 @@ Related Question: {question}
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
         # Use Phi-3's chat format with strict formatting rules
-        context_summary = context_text[:3000]  # More context for better understanding
+        context_summary = context_text[:800]  # Keep context tight so total prompt stays under 500 tokens
         prompt = f"""<|system|>You are an Ayurvedic expert providing clear, professional answers based STRICTLY on the provided sources.
 
 CONTENT RULES (MUST FOLLOW):
