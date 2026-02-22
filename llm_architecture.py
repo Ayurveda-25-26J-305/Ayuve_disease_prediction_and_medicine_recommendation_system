@@ -58,9 +58,42 @@ class LLMArchitecture:
         self.model.eval()
         logger.info("LLM initialized successfully")
 
+    def generate_from_messages(self, messages: list, max_new_tokens: int = None) -> str:
+        """
+        Preferred method for chat models — tokenizes directly from messages using
+        apply_chat_template(tokenize=True) so special tokens are NEVER re-tokenized
+        from a string (which would corrupt them).
+        """
+        # Tokenize directly — this guarantees <|user|>/<|end|>/<|assistant|> are
+        # encoded as their special token IDs, not as plain text bytes.
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt"
+        ).to(self.device)
+
+        input_length = inputs.shape[1]
+        print(f" Generating response (input tokens: {input_length})...")
+
+        with torch.inference_mode():
+            output_ids = self.model.generate(
+                inputs,
+                max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 150),
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+                use_cache=True
+            )
+
+        # Decode only new tokens
+        generated_ids = output_ids[0][input_length:]
+        answer = self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+        print(f"✅ Generated {len(generated_ids)} new tokens")
+        return answer if answer else "Unable to generate an answer. Please try again."
+
     def generate(self, prompt: str, max_new_tokens: int = None) -> str:
-        # NOTE: do NOT set add_special_tokens=False — Phi-3's chat template does NOT
-        # include BOS in its string output, so the tokenizer must add it (default behaviour).
+        """Legacy plain-text prompt path (used only by AyurvedicRAG)."""
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -71,25 +104,14 @@ class LLMArchitecture:
         print(f" Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
 
         with torch.inference_mode():
-            try:
-                output_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    use_cache=True
-                )
-            except (AttributeError, KeyError) as e:
-                print(f"⚠️  Cache error, retrying without cache: {e}")
-                output_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens or 64,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    use_cache=False
-                )
+            output_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+                use_cache=True
+            )
 
         # Decode only the newly generated tokens (excluding the input prompt)
         input_length = inputs['input_ids'].shape[1]

@@ -464,7 +464,8 @@ Related Question: {question}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Use apply_chat_template — guaranteed correct special token handling for Phi-3
+        # Build messages — use generate_from_messages() so special tokens are
+        # encoded directly and never corrupted by a string round-trip.
         context_summary = context_text[:600]  # ~150 tokens of context
         messages = [
             {
@@ -478,17 +479,11 @@ Related Question: {question}
                 )
             }
         ]
-        prompt = self.llm.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        print(f"📏 Prompt tokens (approx {len(prompt.split())} words), max_new_tokens={dynamic_tokens}")
-        
+        print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
 
-        # Generate answer with dynamic token adjustment
+        # Generate answer — tokenize=True path, no string re-tokenization
         print("💭 Generating answer...")
-        raw_answer = self.llm.generate(prompt, max_new_tokens=dynamic_tokens)
+        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
         
         # Post-process answer for quality and formatting
         base_answer = self._format_answer(raw_answer)
