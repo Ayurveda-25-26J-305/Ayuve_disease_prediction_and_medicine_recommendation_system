@@ -83,6 +83,9 @@ class LLMArchitecture:
         input_length = input_ids.shape[1]
         print(f" Generating response (input tokens: {input_length})...")
 
+        # Pass an explicit DynamicCache so transformers never calls the removed
+        # DynamicCache.from_legacy_cache() method, while still getting cache speedup.
+        from transformers.cache_utils import DynamicCache
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
@@ -90,7 +93,8 @@ class LLMArchitecture:
                 do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=False  # DynamicCache.from_legacy_cache removed in newer transformers
+                past_key_values=DynamicCache(),
+                use_cache=True
             )
 
         # Decode only new tokens

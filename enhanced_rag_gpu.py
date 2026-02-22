@@ -472,8 +472,8 @@ Related Question: {question}
                 "role": "user",
                 "content": (
                     f"You are an Ayurvedic knowledge assistant. "
-                    f"Answer ONLY using the sources below. "
-                    f"Give 3-5 bullet points, each one clear sentence.\n\n"
+                    f"Using ONLY the sources below, write a clear and complete answer in 2-3 sentences. "
+                    f"Do not add information not in the sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}"
                 )
@@ -481,12 +481,12 @@ Related Question: {question}
         ]
         print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
 
-        # Generate answer — tokenize=True path, no string re-tokenization
+        # Generate answer
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
-        
-        # Post-process answer for quality and formatting
-        base_answer = self._format_answer(raw_answer)
+
+        # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
+        base_answer = raw_answer.strip()
         
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
