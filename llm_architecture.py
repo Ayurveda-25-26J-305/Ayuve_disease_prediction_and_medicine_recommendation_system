@@ -59,13 +59,13 @@ class LLMArchitecture:
         logger.info("LLM initialized successfully")
 
     def generate(self, prompt: str, max_new_tokens: int = None) -> str:
-        # add_special_tokens=False: the chat template already includes BOS; avoid duplicating it
+        # NOTE: do NOT set add_special_tokens=False — Phi-3's chat template does NOT
+        # include BOS in its string output, so the tokenizer must add it (default behaviour).
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=1500,
-            add_special_tokens=False
+            max_length=1500
         ).to(self.device)
 
         print(f" Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
