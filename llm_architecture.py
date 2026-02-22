@@ -86,9 +86,8 @@ class LLMArchitecture:
         attention_mask = torch.ones_like(input_ids)
         print(f" Generating response (input tokens: {input_length})...")
 
-        # Pass an explicit DynamicCache so transformers never calls the removed
-        # DynamicCache.from_legacy_cache() method, while still getting cache speedup.
-        from transformers.cache_utils import DynamicCache
+        # use_cache=False: avoids DynamicCache.from_legacy_cache / seen_tokens
+        # incompatibilities between Phi-3's bundled modeling_phi3.py and newer transformers.
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
