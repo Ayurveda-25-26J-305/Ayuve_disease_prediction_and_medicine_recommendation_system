@@ -456,57 +456,34 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Dynamic token calculation - increased for complete answers
-        context_length = sum(len(d.get("text", "")) for d in top_context_docs)
-        question_length = len(question)
-        
-        # Production-grade token allocation for complete, coherent answers
-        if context_length > 2000 or question_length > 100:
-            dynamic_tokens = 450  # Detailed answers with proper structure
-        elif context_length > 1000:
-            dynamic_tokens = 400  # Moderate answers with complete points
-        else:
-            dynamic_tokens = 350  # Brief but complete answers
+        # Fixed token budget — 150 is enough for 3-5 bullet points
+        dynamic_tokens = 150
             
-        print(f"📏 Dynamic tokens: {dynamic_tokens} (context: {context_length} chars)")
-        
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Use Phi-3's chat format with strict formatting rules
-        context_summary = context_text[:800]  # Keep context tight so total prompt stays under 500 tokens
-        prompt = f"""<|system|>You are an Ayurvedic expert providing clear, professional answers based STRICTLY on the provided sources.
-
-CONTENT RULES (MUST FOLLOW):
-1. Use ONLY information from the Ayurvedic Knowledge sources provided below
-2. Paraphrase the source content clearly but stay close to the original meaning
-3. Do not add information not present in the sources
-4. Each point must be UNIQUE - do not repeat similar information
-5. Focus on different aspects (benefits, usage, effects, preparation, etc.)
-
-FORMATTING RULES (MUST FOLLOW):
-1. Start each point with a bullet (•) or dash (-)
-2. Write 3-5 DISTINCT points, each on a NEW LINE
-3. Each point should be ONE complete sentence (15-30 words maximum)
-4. Use simple, clear language - avoid excessive repetition
-5. DO NOT write run-on sentences or combine multiple ideas in one point
-6. End each sentence with a period before starting the next point
-7. Ensure EACH point discusses a DIFFERENT aspect or benefit
-
-EXAMPLE FORMAT:
-- First benefit explained in one clear sentence using information from sources.
-- Second benefit with specific details mentioned in the provided knowledge.
-- Third benefit focusing on practical application as described in sources.<|end|>
-<|user|>Ayurvedic Knowledge:
-{context_summary}
-
-Question: {question}
-
-Based on the above sources, provide a well-structured answer with 3-5 bullet points:<|end|>
-<|assistant|>
-"""
+        # Use apply_chat_template — guaranteed correct special token handling for Phi-3
+        context_summary = context_text[:600]  # ~150 tokens of context
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    f"You are an Ayurvedic knowledge assistant. "
+                    f"Answer ONLY using the sources below. "
+                    f"Give 3-5 bullet points, each one clear sentence.\n\n"
+                    f"Sources:\n{context_summary}\n\n"
+                    f"Question: {question}"
+                )
+            }
+        ]
+        prompt = self.llm.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        print(f"📏 Prompt tokens (approx {len(prompt.split())} words), max_new_tokens={dynamic_tokens}")
         
 
         # Generate answer with dynamic token adjustment

@@ -80,8 +80,7 @@ class LLMArchitecture:
                     **inputs,
                     max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
                     do_sample=False,  # Greedy for deterministic, coherent output
-                    repetition_penalty=1.08,  # Lower penalty to avoid incoherent rambling
-                    no_repeat_ngram_size=3,
+                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=True
@@ -91,10 +90,9 @@ class LLMArchitecture:
                 print(f"⚠️  Cache error, retrying without cache: {e}")
                 output_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=max_new_tokens or 64,  # Use requested tokens
-                    do_sample=False,  # Greedy for coherent output
-                    repetition_penalty=1.10,  # Lower penalty for better coherence
-                    no_repeat_ngram_size=3,
+                    max_new_tokens=max_new_tokens or 64,
+                    do_sample=False,
+                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=False
