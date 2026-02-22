@@ -59,40 +59,33 @@ class LLMArchitecture:
         logger.info("LLM initialized successfully")
 
     def generate(self, prompt: str, max_new_tokens: int = None) -> str:
-        # Free fragmented GPU memory before generation
-        if self.device == "cuda":
-            torch.cuda.empty_cache()
-            gc.collect()
-
+        # add_special_tokens=False: the chat template already includes BOS; avoid duplicating it
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=1500  # Enough room for system prompt + context; Phi-3 has 4k window
+            max_length=1500,
+            add_special_tokens=False
         ).to(self.device)
 
         print(f" Generating response (input tokens: {inputs['input_ids'].shape[1]})...")
 
         with torch.inference_mode():
-            # Try with cache first, fall back to no-cache if it fails
             try:
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 64),
-                    do_sample=False,  # Greedy for deterministic, coherent output
-                    repetition_penalty=1.1,
+                    do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=True
                 )
             except (AttributeError, KeyError) as e:
-                # Fallback: greedy decoding without cache
                 print(f"⚠️  Cache error, retrying without cache: {e}")
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens or 64,
                     do_sample=False,
-                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     use_cache=False
