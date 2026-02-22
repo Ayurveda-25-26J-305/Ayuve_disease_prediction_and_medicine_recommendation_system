@@ -88,7 +88,7 @@ class LLMArchitecture:
                 bnb_4bit_quant_type="nf4"
             ) if self.device == "cuda" else None,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map="auto" if self.device == "cuda" else None,
+            device_map={"": 0} if self.device == "cuda" else None,  # explicit GPU 0 avoids dispatch_model calling .to() on quantized model
             low_cpu_mem_usage=True,
             attn_implementation="eager",
             trust_remote_code=True
