@@ -88,7 +88,10 @@ class LLMArchitecture:
                 bnb_4bit_quant_type="nf4"
             ) if self.device == "cuda" else None,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map={"": 0} if self.device == "cuda" else None,  # explicit GPU 0 avoids dispatch_model calling .to() on quantized model
+            # Do NOT pass device_map when using 4-bit bitsandbytes quantization.
+            # bitsandbytes places the model on GPU automatically during from_pretrained.
+            # Passing device_map triggers accelerate's dispatch_model() which calls
+            # model.to(device) — that raises ValueError on already-quantized models.
             low_cpu_mem_usage=True,
             attn_implementation="eager",
             trust_remote_code=True
