@@ -45,6 +45,45 @@ def _patch_dynamic_cache():
 _patch_dynamic_cache()
 
 
+def _patch_accelerate_dispatch():
+    """
+    Old accelerate versions (pre-0.26) call model.to(device) inside dispatch_model()
+    even when the model is already placed by bitsandbytes 4-bit quantization.
+    transformers raises ValueError: `.to` is not supported for 4-bit/8-bit models.
+    This patch skips dispatch_model entirely for quantized models.
+    Colab's system site-packages overrides pip upgrades, so patching in code is
+    the only reliable fix.
+    """
+    try:
+        import accelerate.big_modeling as _bm
+
+        _original_dispatch = _bm.dispatch_model
+
+        def _safe_dispatch_model(model, *args, **kwargs):
+            is_quantized = (
+                getattr(model, "is_quantized", False) or
+                getattr(model, "is_loaded_in_4bit", False) or
+                getattr(model, "is_loaded_in_8bit", False)
+            )
+            if is_quantized:
+                logger.info("Skipping dispatch_model for quantized model ✓")
+                return model  # already on GPU via bitsandbytes — do nothing
+            return _original_dispatch(model, *args, **kwargs)
+
+        _bm.dispatch_model = _safe_dispatch_model
+
+        # Also patch the reference imported inside transformers.modeling_utils
+        import transformers.modeling_utils as _mu
+        if hasattr(_mu, "dispatch_model"):
+            _mu.dispatch_model = _safe_dispatch_model
+
+        logger.info("accelerate.dispatch_model patched for quantized models ✓")
+
+    except Exception as e:
+        logger.warning(f"accelerate dispatch patch failed (non-fatal): {e}")
+
+
+_patch_accelerate_dispatch()
 
 
 class LLMArchitecture:
