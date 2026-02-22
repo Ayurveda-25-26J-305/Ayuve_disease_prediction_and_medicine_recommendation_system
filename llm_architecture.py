@@ -66,19 +66,26 @@ class LLMArchitecture:
         """
         # Tokenize directly — this guarantees <|user|>/<|end|>/<|assistant|> are
         # encoded as their special token IDs, not as plain text bytes.
-        inputs = self.tokenizer.apply_chat_template(
+        # apply_chat_template returns a BatchEncoding in newer transformers, so
+        # always access input_ids explicitly.
+        encoded = self.tokenizer.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
             return_tensors="pt"
-        ).to(self.device)
+        )
+        # Handle both plain tensor and BatchEncoding return types
+        if isinstance(encoded, torch.Tensor):
+            input_ids = encoded.to(self.device)
+        else:
+            input_ids = encoded["input_ids"].to(self.device)
 
-        input_length = inputs.shape[1]
+        input_length = input_ids.shape[1]
         print(f" Generating response (input tokens: {input_length})...")
 
         with torch.inference_mode():
             output_ids = self.model.generate(
-                inputs,
+                input_ids,
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 150),
                 do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
