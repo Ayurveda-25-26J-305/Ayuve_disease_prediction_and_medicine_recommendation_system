@@ -6,6 +6,45 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _patch_dynamic_cache():
+    """
+    Phi-3's bundled modeling_phi3.py was written for transformers ~4.40.
+    Newer transformers removed two things that Phi-3 still uses:
+      1. DynamicCache.from_legacy_cache()  → raises AttributeError on generate()
+      2. DynamicCache.seen_tokens property → raises AttributeError mid-forward-pass
+    Without this patch we must use use_cache=False which destroys position
+    encoding in 4-bit models, producing garbage output.
+    This patch adds both back as no-ops / shims so use_cache=True works normally.
+    """
+    try:
+        from transformers.cache_utils import DynamicCache
+
+        # 1. Restore from_legacy_cache class method if missing
+        if not hasattr(DynamicCache, "from_legacy_cache"):
+            @classmethod
+            def from_legacy_cache(cls, past_key_values=None):
+                cache = cls()
+                if past_key_values is not None:
+                    for layer_idx, (k, v) in enumerate(past_key_values):
+                        cache.update(k, v, layer_idx)
+                return cache
+            DynamicCache.from_legacy_cache = from_legacy_cache
+            logger.info("DynamicCache.from_legacy_cache patched ✓")
+
+        # 2. Restore seen_tokens property if missing
+        if not isinstance(getattr(DynamicCache, "seen_tokens", None), property):
+            DynamicCache.seen_tokens = property(
+                lambda self: self.get_seq_length()
+            )
+            logger.info("DynamicCache.seen_tokens patched ✓")
+
+    except Exception as e:
+        logger.warning(f"DynamicCache patch failed (non-fatal): {e}")
+
+
+_patch_dynamic_cache()
+
+
 
 
 class LLMArchitecture:
@@ -86,21 +125,20 @@ class LLMArchitecture:
         attention_mask = torch.ones_like(input_ids)
         print(f" Generating response (input tokens: {input_length})...")
 
-        # use_cache=False: avoids DynamicCache.from_legacy_cache / seen_tokens
-        # incompatibilities between Phi-3's bundled modeling_phi3.py and newer transformers.
-        # do_sample=True + temperature=0.1: breaks greedy repetition loop that occurs
-        # when use_cache=False causes position IDs to not advance cleanly in 4-bit models.
+        # use_cache=True: DynamicCache is now patched at module load (see _patch_dynamic_cache)
+        # to restore from_legacy_cache() and .seen_tokens that Phi-3's modeling_phi3.py requires.
+        # This gives correct position encoding; use_cache=False caused garbage/repetition loops.
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 150),
+                max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 200),
                 do_sample=True,
-                temperature=0.1,
+                temperature=0.7,
                 top_p=0.9,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=False
+                use_cache=True
             )
 
         # Decode only new tokens
@@ -127,7 +165,7 @@ class LLMArchitecture:
                 do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=False  # DynamicCache.from_legacy_cache removed in newer transformers
+                use_cache=True  # DynamicCache patched at module load for Phi-3 compatibility
             )
 
         # Decode only the newly generated tokens (excluding the input prompt)
