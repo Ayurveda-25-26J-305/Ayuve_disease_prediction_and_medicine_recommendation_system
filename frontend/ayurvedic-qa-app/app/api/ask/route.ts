@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
     console.log(`[ask] Response status: ${response.status}`);
     console.log(`[ask] Response preview: ${text.slice(0, 300)}`);
 
-    if (text.trim().startsWith("<")) {
-      console.error("[ask] Got HTML interstitial from tunnel");
+    if (text.trim().startsWith("<") || !text.trim().startsWith("{")) {
+      console.error("[ask] Got non-JSON response — tunnel may be down or showing interstitial");
       return NextResponse.json(
-        { success: false, error: "Tunnel interstitial — open the ngrok URL in your browser first to dismiss it" },
+        { success: false, error: "Backend tunnel is offline or unreachable" },
         { status: 502 }
       );
     }

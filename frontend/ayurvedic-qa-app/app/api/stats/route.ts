@@ -19,11 +19,11 @@ export async function GET(_request: NextRequest) {
     console.log(`[stats] Response status: ${response.status}`);
     console.log(`[stats] Response preview: ${text.slice(0, 200)}`);
 
-    // Guard against HTML interstitial pages (ngrok/localtunnel warning pages)
-    if (text.trim().startsWith("<")) {
-      console.error("[stats] Got HTML instead of JSON — tunnel interstitial page");
+    // Guard against HTML interstitial or plain-text tunnel error pages
+    if (text.trim().startsWith("<") || !text.trim().startsWith("{")) {
+      console.error("[stats] Got non-JSON response — tunnel may be down or showing interstitial");
       return NextResponse.json(
-        { success: false, error: "Tunnel interstitial — visit the ngrok URL in browser first to dismiss" },
+        { success: false, error: "Backend tunnel is offline or unreachable" },
         { status: 502 }
       );
     }
