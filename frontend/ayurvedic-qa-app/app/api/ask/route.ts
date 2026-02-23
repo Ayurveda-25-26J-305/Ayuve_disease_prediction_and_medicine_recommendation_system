@@ -26,7 +26,20 @@ export async function POST(request: NextRequest) {
     });
 
     clearTimeout(timeoutId);
-    const data = await response.json();
+
+    const text = await response.text();
+    console.log(`[ask] Response status: ${response.status}`);
+    console.log(`[ask] Response preview: ${text.slice(0, 300)}`);
+
+    if (text.trim().startsWith("<")) {
+      console.error("[ask] Got HTML interstitial from tunnel");
+      return NextResponse.json(
+        { success: false, error: "Tunnel interstitial — open the ngrok URL in your browser first to dismiss it" },
+        { status: 502 }
+      );
+    }
+
+    const data = JSON.parse(text);
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error("Proxy /api/ask error:", error);
