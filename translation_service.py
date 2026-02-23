@@ -168,37 +168,30 @@ class TranslationService:
             logger.warning("Translation will be disabled. Install: pip install transformers sentencepiece langdetect")
     
     def _load_models(self):
-        """Load translation models and language detector"""
+        """Load translation backend - uses Google Translate via deep_translator (no model download)"""
         try:
-            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+            from deep_translator import GoogleTranslator
             import langdetect
-            
-            logger.info("Loading Sinhala ↔ English translation models...")
-            logger.info("  Using Meta NLLB-200 (supports 200 languages including Sinhala)...")
-            
-            # Load NLLB model (bidirectional translation)
-            model_name = "facebook/nllb-200-distilled-600M"
-            logger.info(f"  Loading {model_name}...")
-            
-            self.si_to_en_tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.si_to_en_model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
-            
-            # Use same model for both directions (NLLB is bidirectional)
-            self.en_to_si_tokenizer = self.si_to_en_tokenizer
-            self.en_to_si_model = self.si_to_en_model
-            
-            # Language detector
+
+            # Verify connectivity with a quick test
+            _ = GoogleTranslator(source='en', target='si').translate('test')
+
+            self._google_translator = GoogleTranslator
             self.language_detector = langdetect
-            
-            logger.info("✓ All translation models loaded successfully")
-            logger.info("  Sinhala code: sin_Sinh | English code: eng_Latn")
-            
-        except ImportError as e:
-            logger.error(f"Missing dependencies: {e}")
-            logger.error("Install with: pip install transformers sentencepiece langdetect")
+
+            # Set dummy model flags so is_available() returns True
+            self.si_to_en_model = True
+            self.en_to_si_model = True
+            self.si_to_en_tokenizer = True
+            self.en_to_si_tokenizer = True
+
+            logger.info("✓ Translation ready via Google Translate (deep_translator)")
+
+        except ImportError:
+            logger.error("Missing deep_translator. Install: pip install deep-translator langdetect")
             raise
         except Exception as e:
-            logger.error(f"Error loading models: {e}")
+            logger.error(f"Translation init failed: {e}")
             raise
     
     def detect_language(self, text: str) -> str:
@@ -419,106 +412,52 @@ class TranslationService:
     
     def translate_si_to_en(self, text: str, is_romanized: bool = False) -> str:
         """
-        Translate Sinhala text to English
-        
-        Args:
-            text: Sinhala text (Unicode or romanized)
-            is_romanized: If True, text is romanized Singlish (will use alternative method)
-            
-        Returns:
-            English translation
+        Translate Sinhala (or romanized Singlish) to English.
+        - Romanized Singlish: keyword dictionary first, then Google Translate fallback
+        - Sinhala Unicode: Google Translate directly
         """
         if not self.si_to_en_model:
-            logger.warning("Translation model not loaded, returning original text")
             return text
-        
-        # IMPORTANT: For romanized Singlish, use word-by-word translation approach
-        # Helsinki-NLP models don't handle romanized text well, causing garbled output
-        if is_romanized:
-            logger.info("Romanized Singlish detected - using keyword-based translation")
-            translated = self._translate_romanized_keywords(text)
-            return translated
-        
+
         try:
-            # Standard Sinhala Unicode → English translation using NLLB
-            # Set source language to Sinhala
-            self.si_to_en_tokenizer.src_lang = "sin_Sinh"
-            
-            # Tokenize
-            inputs = self.si_to_en_tokenizer(
-                text, 
-                return_tensors="pt", 
-                padding=True, 
-                truncation=True,
-                max_length=512
-            ).to(self.device)
-            
-            # Generate translation with target language forced to English
-            # Get the token ID for English (NLLB uses language tokens like "eng_Latn")
-            eng_token_id = self.si_to_en_tokenizer.convert_tokens_to_ids("eng_Latn")
-            
-            translated_tokens = self.si_to_en_model.generate(
-                **inputs,
-                forced_bos_token_id=eng_token_id
-            )
-            
-            # Decode
-            translated = self.si_to_en_tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-            
-            logger.info(f"Translated (si→en): {text[:50]}... → {translated[:50]}...")
-            return translated.strip()
-            
+            if is_romanized:
+                # Step 1: keyword dict translation
+                translated = self._translate_romanized_keywords(text)
+                # Step 2: if still looks like romanized Singlish, try Google Translate
+                if self._is_romanized_singlish(translated):
+                    try:
+                        gt = self._google_translator(source='auto', target='en')
+                        translated = gt.translate(text)
+                        logger.info(f"Google-translated Singlish: '{text}' → '{translated}'")
+                    except Exception:
+                        pass  # keep dict translation
+                return translated
+            else:
+                # Sinhala Unicode → English via Google Translate
+                gt = self._google_translator(source='si', target='en')
+                result = gt.translate(text)
+                logger.info(f"Google-translated si→en: '{text[:60]}' → '{result[:60]}'")
+                return result
         except Exception as e:
-            logger.error(f"Translation error (si→en): {e}")
-            return text  # Fallback to original
-    
+            logger.warning(f"translate_si_to_en failed: {e}")
+            return text
+
     def translate_en_to_si(self, text: str) -> str:
         """
-        Translate English text to Sinhala
-        
-        Args:
-            text: English text
-            
-        Returns:
-            Sinhala translation
+        Translate English answer to Sinhala Unicode using Google Translate.
         """
         if not self.en_to_si_model:
-            logger.warning("Translation model not loaded, returning original text")
             return text
-        
+
         try:
-            # English → Sinhala translation using NLLB
-            # Set source language to English
-            self.en_to_si_tokenizer.src_lang = "eng_Latn"
-            
-            # Tokenize
-            inputs = self.en_to_si_tokenizer(
-                text, 
-                return_tensors="pt", 
-                padding=True, 
-                truncation=True,
-                max_length=512
-            ).to(self.device)
-            
-            # Generate Sinhala translation with target language forced to Sinhala
-            # Get the token ID for Sinhala (NLLB uses language tokens like "sin_Sinh")
-            sin_token_id = self.en_to_si_tokenizer.convert_tokens_to_ids("sin_Sinh")
-            
-            translated_tokens = self.en_to_si_model.generate(
-                **inputs,
-                forced_bos_token_id=sin_token_id
-            )
-            
-            # Decode
-            translated = self.en_to_si_tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-            
-            logger.info(f"Translated (en→si): {text[:50]}... → {translated[:50]}...")
-            return translated.strip()
-            
+            gt = self._google_translator(source='en', target='si')
+            result = gt.translate(text)
+            logger.info(f"Google-translated en→si: '{text[:60]}' → '{result[:60]}'")
+            return result
         except Exception as e:
-            logger.error(f"Translation error (en→si): {e}")
-            return text  # Fallback to original
-    
+            logger.warning(f"translate_en_to_si failed: {e}")
+            return text  # fallback to English
+
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         """
         Translate text between languages
