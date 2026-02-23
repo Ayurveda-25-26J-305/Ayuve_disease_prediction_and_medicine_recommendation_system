@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
 
 // Tell Next.js this route can take up to 300 seconds
 export const maxDuration = 300;
@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         "bypass-tunnel-reminder": "true",
+        "ngrok-skip-browser-warning": "true",
         "User-Agent": "NextJS-Proxy/1.0",
       },
       body: JSON.stringify(body),
