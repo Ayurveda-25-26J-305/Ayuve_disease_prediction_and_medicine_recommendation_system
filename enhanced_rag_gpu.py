@@ -652,7 +652,18 @@ Related Question: {question}
             if not display_answer or len(display_answer.strip()) < 20:
                 print("⚠️  Translation cleanup removed too much, using English")
                 display_answer = final_answer
-        
+
+        # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
+        if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
+            print("🔄 Translating personalized tips to Sinhala...")
+            simplified_tips = self._simplify_for_translation(personalized_tips)
+            raw_tips_si = self.translator.translate_en_to_si(simplified_tips)
+            tips_si = self._cleanup_translated_answer(raw_tips_si)
+            if tips_si and len(tips_si.strip()) >= 20:
+                personalized_tips = tips_si
+            else:
+                print("⚠️  Tips translation cleanup removed too much, keeping English")
+
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
             "answer_english": final_answer,  # Always keep English version
