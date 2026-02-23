@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         "bypass-tunnel-reminder": "true",
-        "ngrok-skip-browser-warning": "true",
-        "User-Agent": "NextJS-Proxy/1.0",
+        "ngrok-skip-browser-warning": "69420",
+        "User-Agent": "python-requests/2.28.0",
       },
       body: JSON.stringify(body),
     });

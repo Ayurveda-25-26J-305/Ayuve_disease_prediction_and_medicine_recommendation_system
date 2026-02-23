@@ -12,8 +12,8 @@ export async function GET(_request: NextRequest) {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "bypass-tunnel-reminder": "true",
-        "ngrok-skip-browser-warning": "true",
-        "User-Agent": "Mozilla/5.0 NextJS-Proxy/1.0",
+        "ngrok-skip-browser-warning": "69420",
+        "User-Agent": "python-requests/2.28.0",
       },
     });
 
