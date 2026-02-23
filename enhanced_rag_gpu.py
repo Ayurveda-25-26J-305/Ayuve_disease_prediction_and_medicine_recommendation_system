@@ -401,7 +401,77 @@ Related Question: {question}
             return clarification_text + answer
         
         return answer
-    
+
+    def _detect_dosha_from_question(self, question: str, answer: str) -> str:
+        """
+        Detect the most relevant dosha from the question and answer text.
+        Returns one of: 'Vata', 'Pitta', 'Kapha', or 'General'
+        """
+        text = (question + " " + answer).lower()
+
+        vata_keywords = [
+            'vata', 'wind', 'air', 'dry', 'anxious', 'anxiety', 'irregular',
+            'constipation', 'insomnia', 'bloating', 'gas', 'nervous', 'thin',
+            'cold', 'joint', 'pain', 'stiff', 'moving', 'mobile', 'variable'
+        ]
+        pitta_keywords = [
+            'pitta', 'fire', 'heat', 'hot', 'inflammation', 'acid', 'acidity',
+            'rash', 'skin', 'fever', 'burning', 'irritable', 'anger', 'liver',
+            'digestion', 'metabolism', 'sharp', 'intense', 'focus', 'eye'
+        ]
+        kapha_keywords = [
+            'kapha', 'water', 'earth', 'mucus', 'congestion', 'weight', 'heavy',
+            'slow', 'lethargy', 'depression', 'cold', 'damp', 'lung', 'cough',
+            'stable', 'steady', 'oily', 'smooth', 'sweet', 'excess'
+        ]
+
+        vata_score = sum(1 for w in vata_keywords if w in text)
+        pitta_score = sum(1 for w in pitta_keywords if w in text)
+        kapha_score = sum(1 for w in kapha_keywords if w in text)
+
+        scores = {'Vata': vata_score, 'Pitta': pitta_score, 'Kapha': kapha_score}
+        dominant = max(scores, key=scores.get)
+
+        # Only return a dosha if there's meaningful signal
+        if scores[dominant] == 0:
+            return 'General'
+        if scores[dominant] == max(vata_score, pitta_score, kapha_score):
+            # Check for tie
+            top_score = scores[dominant]
+            tied = [d for d, s in scores.items() if s == top_score]
+            if len(tied) > 1:
+                return '-'.join(tied)
+
+        return dominant
+
+    def _generate_personalized_tips(self, question: str, answer: str, dosha: str) -> str:
+        """
+        Generate 2-3 short personalized tips relevant to the question/answer context,
+        tailored to the detected dosha. Tips must be different from the answer.
+        """
+        print(f"💡 Generating personalized tips for {dosha} dosha...")
+        try:
+            prompt = (
+                f"You are an Ayurvedic health advisor. "
+                f"A user asked: \"{question}\"\n"
+                f"The answer was about: {answer[:300]}\n\n"
+                f"The question relates to the {dosha} dosha.\n"
+                f"Give exactly 2-3 short, practical personalized tips for someone with {dosha} "
+                f"constitution that are RELATED to this topic but NOT already mentioned in the answer. "
+                f"Format as a numbered list. Be concise (1-2 sentences each)."
+            )
+            messages = [
+                {"role": "system", "content": "You are an Ayurvedic expert providing brief personalized health tips."},
+                {"role": "user", "content": prompt}
+            ]
+            tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
+            tips = tips.strip()
+            print(f"✓ Tips generated: {tips[:100]}...")
+            return tips
+        except Exception as e:
+            print(f"⚠️  Tip generation failed: {e}")
+            return ""
+
     def answer_question(
         self, 
         question: str, 
@@ -519,6 +589,11 @@ Related Question: {question}
                 question=question
             )
             is_personalized = True
+
+        # Detect dosha and generate personalized tips (always, regardless of user profile)
+        detected_dosha = self._detect_dosha_from_question(question, base_answer)
+        personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha)
+        print(f"🧬 Detected dosha: {detected_dosha}")
         
         # Format response with similarity percentages
         formatted_citations = []
@@ -590,7 +665,9 @@ Related Question: {question}
             "sources": top_context_docs,
             "all_sources": retrieved_docs,
             "num_sources": len(top_context_docs),
-            "personalized": is_personalized
+            "personalized": is_personalized,
+            "detected_dosha": detected_dosha,
+            "personalized_tips": personalized_tips,
         }
         
         if validation_result:

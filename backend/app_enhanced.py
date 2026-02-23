@@ -81,7 +81,7 @@ def initialize_system():
         max_new_tokens=config.get('max_new_tokens', 128),
         enable_validation=True,
         enable_personalization=True,
-        enable_translation=False,  # Disabled to save GPU memory
+        enable_translation=True,  # Enabled: auto-detects Sinhala and translates answers
         embedding_model=config['embedding_model']
     )
     print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
@@ -245,6 +245,8 @@ def ask_question():
             "num_sources": response['num_sources'],
             "validation": response.get('validation', {}),
             "personalized": response['personalized'],
+            "detected_dosha": response.get('detected_dosha', 'General'),
+            "personalized_tips": response.get('personalized_tips', ''),
             "user_info": response.get('user_info', {})
         }
         
