@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        "bypass-tunnel-reminder": "true",
-        "ngrok-skip-browser-warning": "69420",
+        "Accept": "application/json",
+        "ngrok-skip-browser-warning": "true",
         "User-Agent": "python-requests/2.28.0",
       },
       body: JSON.stringify(body),

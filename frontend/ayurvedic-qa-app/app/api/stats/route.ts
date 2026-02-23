@@ -9,10 +9,8 @@ export async function GET(_request: NextRequest) {
       method: "GET",
       cache: "no-store",
       headers: {
-        "Content-Type": "application/json",
         "Accept": "application/json",
-        "bypass-tunnel-reminder": "true",
-        "ngrok-skip-browser-warning": "69420",
+        "ngrok-skip-browser-warning": "true",
         "User-Agent": "python-requests/2.28.0",
       },
     });
