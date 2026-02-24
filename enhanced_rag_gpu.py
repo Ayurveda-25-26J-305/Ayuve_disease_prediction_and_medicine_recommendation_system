@@ -101,12 +101,12 @@ Verse/Paragraph: {paragraph}
 {doc_text}"""
             else:
                 # QA dataset entry
-                question = meta.get("question", "N/A")
-                # Cap text to 200 chars to keep total prompt within token budget
-                doc_text = doc.get("text", "")[:200]
+                qa_question = meta.get("question", "N/A")
+                # Use 350 chars per source (was 200)
+                doc_text = doc.get("text", "")[:350]
                 block = f"""[Source {i}]
 Type: Ayurvedic Q&A Reference
-Related Question: {question}
+Related Question: {qa_question}
 
 {doc_text}"""
             
@@ -518,34 +518,42 @@ Related Question: {question}
             if 'similarity' in doc:
                 doc['similarity_percentage'] = round(doc['similarity'] * 100, 1)
         
-        # Prefer book sources for context, but include QA if relevant
-        if book_docs:
-            top_context_docs = book_docs[:top_k]
-            print(f"📚 Using {len(top_context_docs)} book sources")
-        else:
-            top_context_docs = retrieved_docs[:top_k]
-            print(f"⚠️  No book sources found, using QA entries")
+        # Prefer book sources for context, but include high-similarity QA docs too.
+        # Sort ALL retrieved docs by similarity so the most relevant content wins
+        # regardless of document type, while still keeping books at the front.
+        all_docs_sorted = sorted(retrieved_docs, key=lambda d: d.get('similarity', 0), reverse=True)
+        # Guarantee at least 2 book docs in context if available (for citation quality)
+        top_book_docs = [d for d in all_docs_sorted if d.get('type') == 'book'][:2]
+        other_top_docs = [d for d in all_docs_sorted if d not in top_book_docs][:max(0, top_k - len(top_book_docs))]
+        top_context_docs = (top_book_docs + other_top_docs)[:top_k]
+        print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
+              f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # Fixed token budget — 150 is enough for 3-5 bullet points
-        dynamic_tokens = 150
+        # Token budget: 220 is enough for 4-5 complete sentences
+        dynamic_tokens = 220
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Build messages — use generate_from_messages() so special tokens are
-        # encoded directly and never corrupted by a string round-trip.
-        context_summary = context_text[:600]  # ~150 tokens of context
+        # Build prompt — direct, practical instruction that prevents source-parroting
+        # and pushes the LLM to answer the actual question with actionable advice.
+        context_summary = context_text[:1400]  # ~350 tokens of context (was 600)
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are an Ayurvedic knowledge assistant. "
-                    f"Using ONLY the sources below, write a clear and complete answer in 2-3 sentences. "
-                    f"Do not add information not in the sources.\n\n"
+                    f"You are an expert Ayurvedic practitioner answering a patient's question.\n"
+                    f"Use the Ayurvedic knowledge in the sources below to write a direct, practical answer.\n"
+                    f"Rules:\n"
+                    f"- Directly answer what the patient asked about (herbs, treatments, remedies)\n"
+                    f"- Mention specific herbs, oils, foods or practices from the sources\n"
+                    f"- Write 3-4 complete sentences\n"
+                    f"- Do NOT say 'Source 1' or 'Source 2' — just give the advice\n\n"
                     f"Sources:\n{context_summary}\n\n"
-                    f"Question: {question}"
+                    f"Patient's question: {question}\n\n"
+                    f"Answer:"
                 )
             }
         ]
