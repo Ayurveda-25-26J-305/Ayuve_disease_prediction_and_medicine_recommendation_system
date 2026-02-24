@@ -530,18 +530,21 @@ Related Question: {qa_question}
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=120)
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=160)
 
-            # Prepend the leading bullet the prompt ended with
+            # Strip any leading bullet/dash the model added (prompt ends with '•')
+            # Prevents double-prefix like '• • text' or '• - text'
+            raw_tips = _re.sub(r'^[\s•\-\*]+', '', raw_tips).strip()
             raw_tips = ("• " + raw_tips).strip()
 
             def _clip_bullet(b: str) -> str:
                 b = b.strip()
-                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[10:])
+                b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
+                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[30:])
                 if m:
-                    b = b[:10 + m.start() + 1].strip()
-                if len(b) > 110:
-                    b = b[:110].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                    b = b[:30 + m.start() + 1].strip()
+                if len(b) > 130:
+                    b = b[:130].rsplit(' ', 1)[0].rstrip(',:;') + '.'
                 return b
 
             if '•' in raw_tips:
@@ -639,8 +642,8 @@ Related Question: {qa_question}
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # 150 tokens = 3 bullets × ~15 words × 1.3 tokens — enough, prevents runaway
-        dynamic_tokens = 150
+        # 220 tokens = comfortably fits 3 bullets of up to 20 words each
+        dynamic_tokens = 220
 
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -677,20 +680,25 @@ Related Question: {qa_question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        # Prepend the leading bullet the prompt ended with
-        raw_combined = ("• " + raw_answer).strip()
+        # Strip any leading bullet/dash the model added (prompt already ends with '•')
+        # This prevents double-prefix like '• - text' or '• • text'
+        import re as _re
+        raw_answer_clean = _re.sub(r'^[\s•\-\*]+', '', raw_answer).strip()
+        raw_combined = ("• " + raw_answer_clean).strip()
 
-        # Helper: hard-clip a bullet to its first sentence, max 110 chars
+        # Helper: hard-clip a bullet to its first sentence, min 30 chars before clipping
         import re as _re
         def _clip_bullet(b: str) -> str:
             b = b.strip()
-            # Find first sentence end after at least 10 chars
-            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[10:])
+            # Strip accidental double prefix like '• -' or '• •'
+            b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
+            # Find first sentence end after at least 30 chars
+            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[30:])
             if m:
-                b = b[:10 + m.start() + 1].strip()
-            # Absolute hard cap
-            if len(b) > 110:
-                b = b[:110].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                b = b[:30 + m.start() + 1].strip()
+            # Absolute hard cap at 130 chars
+            if len(b) > 130:
+                b = b[:130].rsplit(' ', 1)[0].rstrip(',:;') + '.'
             return b
 
         # Guarantee • bullet format
