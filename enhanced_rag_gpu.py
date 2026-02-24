@@ -510,20 +510,22 @@ Related Question: {qa_question}
         """
         print(f"💡 Generating personalized tips for {dosha} dosha...")
         try:
+            topic_line = question[:60].strip()
             prompt = (
-                f"You are an Ayurvedic health advisor. "
-                f"A user asked: \"{question}\"\n"
-                f"The answer was about: {answer[:300]}\n\n"
-                f"The question relates to the {dosha} dosha.\n"
-                f"Give exactly 2-3 short, practical personalized tips for someone with {dosha} "
-                f"constitution that are RELATED to this topic but NOT already mentioned in the answer. "
-                f"Format as a numbered list. Be concise (1-2 sentences each)."
+                f"Patient question: \"{question}\"\n"
+                f"Dosha: {dosha}\n\n"
+                f"Give exactly 3 practical Ayurvedic tips for a {dosha} person about: {topic_line}\n"
+                f"FORMAT RULES:\n"
+                f"- Number them 1. 2. 3.\n"
+                f"- Each tip = 1 sentence, max 20 words\n"
+                f"- Tips must be NEW — not already in: {answer[:120]}\n"
+                f"- No introductions, no conclusions\n\n"
+                f"1."
             )
             messages = [
-                {"role": "system", "content": "You are an Ayurvedic expert providing brief personalized health tips."},
                 {"role": "user", "content": prompt}
             ]
-            tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
+            tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
             tips = tips.strip()
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
@@ -609,7 +611,7 @@ Related Question: {qa_question}
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # Token budget: 260 tokens for 4-5 complete, detailed sentences
+        # 260 tokens = enough for 3 focused bullets of ~25 words each
         dynamic_tokens = 260
 
         # Build context
@@ -617,22 +619,25 @@ Related Question: {qa_question}
 
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
 
-        # Smart prompt: patient-centred, forces specificity, prevents source-echoing
-        context_summary = context_text[:2000]  # ~500 tokens (was 1400)
+        # Build a strict bullet-point prompt.
+        # Starting the completion with '•' nudges Phi-3-mini to continue in bullet format.
+        context_summary = context_text[:1800]
+        topic_hint = question[:70].strip()
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are an expert Ayurvedic doctor giving specific, practical advice.\n"
-                    f"Patient question: \"{question}\"\n\n"
-                    f"Ayurvedic knowledge base:\n{context_summary}\n\n"
-                    f"Your task:\n"
-                    f"1. Identify the specific symptom or herb the patient asked about\n"
-                    f"2. Give the EXACT Ayurvedic remedy, herb, oil or treatment for it\n"
-                    f"3. Include how to use it (dosage, method) if the sources mention it\n"
-                    f"4. Write 3-4 clear, complete English sentences\n"
-                    f"5. Do NOT reference 'Source 1', 'the text', or 'according to'\n\n"
-                    f"Answer:"
+                    f"You are an Ayurvedic doctor. A patient asked: \"{question}\"\n\n"
+                    f"Ayurvedic Knowledge:\n{context_summary}\n\n"
+                    f"Answer using EXACTLY 3 bullet points about: {topic_hint}\n"
+                    f"FORMAT RULES (follow strictly):\n"
+                    f"- Start EVERY bullet with the • symbol\n"
+                    f"- Each bullet = 1 short sentence (max 25 words)\n"
+                    f"- Name the specific herb, oil, food or treatment\n"
+                    f"- Do NOT write paragraphs\n"
+                    f"- Do NOT say 'Source', 'according to', or repeat the question\n"
+                    f"- Do NOT start your response with any introduction\n\n"
+                    f"•"
                 )
             }
         ]
@@ -642,8 +647,27 @@ Related Question: {qa_question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
-        base_answer = raw_answer.strip()
+        # The prompt already starts with "•", so prepend it back to the continuation
+        raw_combined = ("• " + raw_answer).strip()
+
+        # Post-process: guarantee the frontend always receives • bullet points
+        import re as _re
+        if '•' in raw_combined:
+            base_answer = raw_combined
+        else:
+            # Convert numbered list (1. 2. 3.) → bullets
+            converted = _re.sub(r'^\d+\.\s+', '• ', raw_combined, flags=_re.MULTILINE)
+            if '•' in converted:
+                base_answer = converted
+            else:
+                # Last resort: split on sentence boundaries and bullet each
+                sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
+                base_answer = '\n'.join(f'• {s}' for s in sents[:4])
+
+        # Trim to max 4 bullets so we never render a wall of text
+        bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
+        if bullets:
+            base_answer = '\n'.join(bullets[:4])
         
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
