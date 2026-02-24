@@ -510,41 +510,50 @@ Related Question: {qa_question}
         """
         print(f"💡 Generating personalized tips for {dosha} dosha...")
         try:
+            import re as _re
             topic_line = question[:60].strip()
             prompt = (
-                f"Patient question: \"{question}\"\n"
-                f"Dosha: {dosha}\n\n"
-                f"Give exactly 3 practical Ayurvedic tips for a {dosha} person about: {topic_line}\n"
-                f"FORMAT RULES (follow strictly):\n"
-                f"- Start EVERY tip with the • symbol\n"
-                f"- Each tip = 1 short sentence, max 20 words\n"
-                f"- Tips must be NEW — not already in: {answer[:120]}\n"
-                f"- No introductions, no conclusions, no paragraphs\n\n"
+                f"Patient question: \"{question}\"\nDosha: {dosha}\n\n"
+                f"Give 3 Ayurvedic lifestyle tips for a {dosha} person about: {topic_line}\n"
+                f"STRICT RULES:\n"
+                f"• Each tip: 1 sentence, MAXIMUM 15 WORDS, end with a period.\n"
+                f"• Start every tip with • symbol on its own line.\n"
+                f"• Tips must be DIFFERENT from: {answer[:80]}\n"
+                f"• NO introductions, NO paragraphs.\n"
+                f"Example:\n"
+                f"• Drink warm water with ginger each morning to aid digestion.\n"
+                f"• Avoid spicy foods that aggravate {dosha} dosha imbalances.\n"
+                f"• Practice daily oil massage with warm sesame oil for grounding.\n\n"
+                f"Now give 3 tips for {dosha} about: {topic_line}\n\n"
                 f"•"
             )
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=120)
 
-            # Prepend the leading bullet the prompt ended with, then enforce bullet format
-            import re as _re
+            # Prepend the leading bullet the prompt ended with
             raw_tips = ("• " + raw_tips).strip()
 
-            if '•' in raw_tips:
-                tips = raw_tips
-            else:
-                # Convert numbered list → bullets
-                converted = _re.sub(r'^\d+\.\s+', '• ', raw_tips, flags=_re.MULTILINE)
-                if '•' in converted:
-                    tips = converted
-                else:
-                    sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_tips) if s.strip()]
-                    tips = '\n'.join(f'• {s}' for s in sents[:3])
+            def _clip_bullet(b: str) -> str:
+                b = b.strip()
+                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[10:])
+                if m:
+                    b = b[:10 + m.start() + 1].strip()
+                if len(b) > 110:
+                    b = b[:110].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                return b
 
-            # Trim to max 3 bullet tips
-            tip_lines = [l for l in tips.splitlines() if l.strip().startswith('•')]
-            tips = '\n'.join(tip_lines[:3]) if tip_lines else tips.strip()
+            if '•' in raw_tips:
+                tips_raw = raw_tips
+            else:
+                converted = _re.sub(r'^\d+\.\s+', '• ', raw_tips, flags=_re.MULTILINE)
+                tips_raw = converted if '•' in converted else '\n'.join(
+                    f'• {s.strip()}' for s in _re.split(r'(?<=[.!?])\s+', raw_tips) if s.strip()
+                )
+
+            tip_lines = [l for l in tips_raw.splitlines() if l.strip().startswith('•')]
+            tips = '\n'.join(_clip_bullet(t) for t in tip_lines[:3])
 
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
@@ -630,32 +639,34 @@ Related Question: {qa_question}
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # 260 tokens = enough for 3 focused bullets of ~25 words each
-        dynamic_tokens = 260
+        # 150 tokens = 3 bullets × ~15 words × 1.3 tokens — enough, prevents runaway
+        dynamic_tokens = 150
 
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
 
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
 
-        # Build a strict bullet-point prompt.
-        # Starting the completion with '•' nudges Phi-3-mini to continue in bullet format.
+        # Strict short-bullet prompt. Prompt ends with '•' so model continues the list.
         context_summary = context_text[:1800]
         topic_hint = question[:70].strip()
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are an Ayurvedic doctor. A patient asked: \"{question}\"\n\n"
-                    f"Ayurvedic Knowledge:\n{context_summary}\n\n"
-                    f"Answer using EXACTLY 3 bullet points about: {topic_hint}\n"
-                    f"FORMAT RULES (follow strictly):\n"
-                    f"- Start EVERY bullet with the • symbol\n"
-                    f"- Each bullet = 1 short sentence (max 25 words)\n"
-                    f"- Name the specific herb, oil, food or treatment\n"
-                    f"- Do NOT write paragraphs\n"
-                    f"- Do NOT say 'Source', 'according to', or repeat the question\n"
-                    f"- Do NOT start your response with any introduction\n\n"
+                    f"You are an Ayurvedic doctor. Patient question: \"{question}\"\n\n"
+                    f"Knowledge:\n{context_summary}\n\n"
+                    f"Write EXACTLY 3 bullet points answering: {topic_hint}\n"
+                    f"STRICT RULES:\n"
+                    f"• Each bullet: 1 sentence, MAXIMUM 15 WORDS, end with a period.\n"
+                    f"• Start every bullet with • symbol on its own line.\n"
+                    f"• Name a specific herb, oil or treatment.\n"
+                    f"• NO paragraphs. NO introductions. NO extra text.\n"
+                    f"Example format:\n"
+                    f"• Turmeric reduces inflammation and purifies the blood.\n"
+                    f"• Ginger tea aids digestion and relieves nausea.\n"
+                    f"• Ashwagandha strengthens immunity and reduces stress.\n\n"
+                    f"Now answer about: {topic_hint}\n\n"
                     f"•"
                 )
             }
@@ -666,27 +677,38 @@ Related Question: {qa_question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        # The prompt already starts with "•", so prepend it back to the continuation
+        # Prepend the leading bullet the prompt ended with
         raw_combined = ("• " + raw_answer).strip()
 
-        # Post-process: guarantee the frontend always receives • bullet points
+        # Helper: hard-clip a bullet to its first sentence, max 110 chars
         import re as _re
+        def _clip_bullet(b: str) -> str:
+            b = b.strip()
+            # Find first sentence end after at least 10 chars
+            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[10:])
+            if m:
+                b = b[:10 + m.start() + 1].strip()
+            # Absolute hard cap
+            if len(b) > 110:
+                b = b[:110].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+            return b
+
+        # Guarantee • bullet format
         if '•' in raw_combined:
             base_answer = raw_combined
         else:
-            # Convert numbered list (1. 2. 3.) → bullets
             converted = _re.sub(r'^\d+\.\s+', '• ', raw_combined, flags=_re.MULTILINE)
             if '•' in converted:
                 base_answer = converted
             else:
-                # Last resort: split on sentence boundaries and bullet each
                 sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
-                base_answer = '\n'.join(f'• {s}' for s in sents[:4])
+                base_answer = '\n'.join(f'• {s}' for s in sents[:3])
 
-        # Trim to max 4 bullets so we never render a wall of text
+        # Extract bullets, hard-truncate each one, keep max 3
         bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
+        bullets = [_clip_bullet(b) for b in bullets[:3]]
         if bullets:
-            base_answer = '\n'.join(bullets[:4])
+            base_answer = '\n'.join(bullets)
         
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
