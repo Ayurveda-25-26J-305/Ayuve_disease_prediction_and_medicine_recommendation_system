@@ -115,8 +115,8 @@ class FAISSVectorDB:
         # Generate query embedding
         query_embedding = self.create_embeddings([query])
         
-        # Search with more candidates if preferring books
-        search_k = top_k * 3 if prefer_books else top_k
+        # Search wider candidate pool so book passages are not missed (was top_k * 3)
+        search_k = top_k * 5 if prefer_books else top_k * 2
         scores, indices = self.index.search(query_embedding, min(search_k, self.index.ntotal))
         
         # Prepare results with similarity scores

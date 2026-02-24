@@ -17,6 +17,65 @@ from translation_service import TranslationService
 
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Query Expansion Map
+# Maps everyday health words → Ayurvedic synonyms so FAISS finds the right
+# passages even when the user's phrasing differs from the book vocabulary.
+# ─────────────────────────────────────────────────────────────────────────────
+QUERY_EXPANSION_MAP = {
+    # Head / Neurological
+    'headache':     'headache shiras shirashula head pain migraine treatment remedy',
+    'head':         'head shiras skull brain headache treatment',
+    'migraine':     'migraine headache shiras shirashula pain',
+    'dizziness':    'dizziness vertigo bhrama head spinning treatment',
+    'insomnia':     'insomnia sleep nidra sleeplessness treatment',
+    'memory':       'memory medhya brain mental cognition treatment',
+    # Pain / Musculoskeletal
+    'pain':         'pain vedana ache treatment remedy relief vata',
+    'shoulder':     'shoulder amsa skandha joint pain treatment oil massage',
+    'joint':        'joint sandhi amavata arthritis pain treatment oil',
+    'back':         'back pain kati kativata spine treatment',
+    'knee':         'knee janu joint pain treatment',
+    'arthritis':    'arthritis amavata joint pain sandhi treatment',
+    'inflammation': 'inflammation shotha swelling pitta treatment remedy',
+    'stiff':        'stiffness vata joint pain oil massage',
+    # Digestive
+    'digestion':    'digestion agni digestive fire jatharagni treatment',
+    'constipation': 'constipation vibandha bowel vata treatment',
+    'diarrhea':     'diarrhea atisara loose motion bowel treatment',
+    'stomach':      'stomach udara abdomen agni digestion treatment',
+    'gas':          'gas flatulence adhmana bloating vata treatment',
+    'acidity':      'acidity amlapitta acid reflux pitta treatment',
+    'nausea':       'nausea vomiting chardi chhardi treatment',
+    # Respiratory
+    'cough':        'cough kasa respiratory bronchial treatment remedy',
+    'cold':         'cold pratishyaya rhinitis nasal congestion treatment',
+    'fever':        'fever jwara temperature heat treatment remedy',
+    'asthma':       'asthma shwasa tamaka breathing treatment',
+    # Skin / Hair
+    'skin':         'skin kushtha twak dermatitis treatment remedy',
+    'rash':         'rash skin eruption kushtha pitta treatment',
+    'hair':         'hair kesha loss scalp treatment oil',
+    # Eyes
+    'eye':          'eye netra akshi vision sight treatment',
+    # General Wellness
+    'fatigue':      'fatigue tiredness weakness kshaya ojas treatment',
+    'stress':       'stress anxiety vata mental nervousness treatment',
+    'anxiety':      'anxiety vata stress mental nervous treatment remedy',
+    'weight':       'weight obesity kapha medovruddhi metabolism',
+    'diabetes':     'diabetes prameha sugar blood glucose treatment',
+    'immunity':     'immunity ojas bala strength resistance treatment',
+    # Herbs commonly asked
+    'cinnamon':     'cinnamon tvak cassia kurudu properties benefits uses treatment',
+    'turmeric':     'turmeric haridra curcumin kaha properties benefits uses',
+    'ginger':       'ginger sunthi ardrakam inguru properties benefits',
+    'ashwagandha':  'ashwagandha withania adaptogen stress strength benefits',
+    'neem':         'neem nimba antibacterial skin blood purifier benefits',
+    'aloe':         'aloe vera kumari komarika skin digestive benefits',
+    'pepper':       'pepper maricha gammiris piperine properties benefits',
+    'cumin':        'cumin suduru jeeraka digestion properties benefits',
+}
+
 
 # Using LLMArchitecture from llm_architecture.py (imported above)
 # This avoids the DynamicCache error
@@ -91,8 +150,8 @@ class EnhancedAyurvedicRAG:
             if doc_type == "book":
                 chapter = meta.get("chapter", "N/A")
                 paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
-                # Cap text to 200 chars to keep total prompt within token budget
-                doc_text = doc.get("text", "")[:200]
+                # 350 chars gives LLM enough content to synthesise a real answer (was 200)
+                doc_text = doc.get("text", "")[:350]
                 block = f"""[Source {i}]
 Book: {book}
 Chapter: {chapter}
@@ -472,13 +531,30 @@ Related Question: {qa_question}
             print(f"⚠️  Tip generation failed: {e}")
             return ""
 
+    def _expand_query_with_ayurvedic_terms(self, query: str) -> str:
+        """
+        Enrich the English search query with Ayurvedic synonyms so FAISS retrieves
+        the most relevant passages even when the user used everyday language.
+        E.g. 'my shoulder hurts' → '...shoulder amsa skandha joint pain oil massage'
+        """
+        query_lower = query.lower()
+        expansions = []
+        for term, expansion in QUERY_EXPANSION_MAP.items():
+            if term in query_lower and expansion not in expansions:
+                expansions.append(expansion)
+        if expansions:
+            expanded = query + ' ' + ' '.join(expansions)
+            print(f"🔎 Query expanded with {len(expansions)} term group(s)")
+            return expanded
+        return query
+
     def answer_question(
-        self, 
-        question: str, 
-        vector_db, 
+        self,
+        question: str,
+        vector_db,
         top_k: int = 5,
         user_profile: Optional[Dict[str, Any]] = None,
-        validation_top_k: int = 5
+        validation_top_k: int = 8
     ) -> Dict[str, Any]:
         """Answer question with validation, personalization, and translation"""
         logger.info(f"Processing question: {question[:50]}...")
@@ -504,10 +580,14 @@ Related Question: {qa_question}
                 question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
                 print(f"🔄 Translated question: {question[:100]}...")
         
+        # Expand query with Ayurvedic synonyms before searching so FAISS finds
+        # the right passages even when user phrasing differs from book vocabulary
+        search_query = self._expand_query_with_ayurvedic_terms(question)
+
         # Retrieve documents with similarity scores (prefer book sources)
         # Note: Always search in English since database is in English
         print("🔍 Retrieving relevant sources...")
-        retrieved_docs = vector_db.search(question, top_k=validation_top_k, prefer_books=True)
+        retrieved_docs = vector_db.search(search_query, top_k=validation_top_k, prefer_books=True)
         
         # Ensure we have book sources for better citations
         book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
@@ -529,30 +609,29 @@ Related Question: {qa_question}
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # Token budget: 220 is enough for 4-5 complete sentences
-        dynamic_tokens = 220
-            
+        # Token budget: 260 tokens for 4-5 complete, detailed sentences
+        dynamic_tokens = 260
+
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
-        
+
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
-        
-        # Build prompt — direct, practical instruction that prevents source-parroting
-        # and pushes the LLM to answer the actual question with actionable advice.
-        context_summary = context_text[:1400]  # ~350 tokens of context (was 600)
+
+        # Smart prompt: patient-centred, forces specificity, prevents source-echoing
+        context_summary = context_text[:2000]  # ~500 tokens (was 1400)
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are an expert Ayurvedic practitioner answering a patient's question.\n"
-                    f"Use the Ayurvedic knowledge in the sources below to write a direct, practical answer.\n"
-                    f"Rules:\n"
-                    f"- Directly answer what the patient asked about (herbs, treatments, remedies)\n"
-                    f"- Mention specific herbs, oils, foods or practices from the sources\n"
-                    f"- Write 3-4 complete sentences\n"
-                    f"- Do NOT say 'Source 1' or 'Source 2' — just give the advice\n\n"
-                    f"Sources:\n{context_summary}\n\n"
-                    f"Patient's question: {question}\n\n"
+                    f"You are an expert Ayurvedic doctor giving specific, practical advice.\n"
+                    f"Patient question: \"{question}\"\n\n"
+                    f"Ayurvedic knowledge base:\n{context_summary}\n\n"
+                    f"Your task:\n"
+                    f"1. Identify the specific symptom or herb the patient asked about\n"
+                    f"2. Give the EXACT Ayurvedic remedy, herb, oil or treatment for it\n"
+                    f"3. Include how to use it (dosage, method) if the sources mention it\n"
+                    f"4. Write 3-4 clear, complete English sentences\n"
+                    f"5. Do NOT reference 'Source 1', 'the text', or 'according to'\n\n"
                     f"Answer:"
                 )
             }
