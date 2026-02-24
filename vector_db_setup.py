@@ -125,9 +125,9 @@ class FAISSVectorDB:
             if idx < len(self.metadata):
                 result = self.metadata[idx].copy()
                 result['score'] = float(score)
-                # Convert L2 distance to similarity (0-1 scale)
-                # Lower distance = higher similarity
-                result['similarity'] = 1.0 / (1.0 + float(score))
+                # IndexFlatIP returns cosine similarity directly for normalized vectors
+                # (NOT L2 distance — do NOT use 1/(1+score) here)
+                result['similarity'] = min(1.0, max(0.0, float(score)))
                 all_results.append(result)
         
         # If prefer_books, rerank to boost book sources

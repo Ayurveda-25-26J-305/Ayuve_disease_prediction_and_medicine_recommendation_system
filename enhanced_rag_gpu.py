@@ -605,7 +605,8 @@ Related Question: {question}
                 "source": doc.get("source", "Unknown"),
                 "type": doc_type,
                 "similarity_percentage": doc.get("similarity_percentage", 0.0),
-                "text_preview": doc.get("text", "")[:100] + "..."
+                # Longer preview so users can locate the passage in the actual book
+                "text_preview": doc.get("text", "")[:200].strip() + "..."
             }
             
             # Add type-specific fields

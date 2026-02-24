@@ -122,6 +122,7 @@ interface Citation {
   related_question?: string;
   formatted?: string;
   similarity_percentage?: number;
+  text_preview?: string;
 }
 
 export default function Home() {
@@ -846,26 +847,24 @@ function MessageComponent({ message }: { message: Message }) {
                       {citation.source}
                     </div>
                     {citation.type === "book" ? (
-                      <div
-                        style={{
-                          color: "#6b7280",
-                          fontSize: "0.9em",
-                        }}
-                      >
-                        {citation.chapter && citation.chapter !== "N/A" ? (
-                          <>
-                            Chapter {citation.chapter}
-                            {citation.paragraph &&
-                              citation.paragraph !== "N/A" && (
-                                <> • Verse/Paragraph {citation.paragraph}</>
-                              )}
-                          </>
-                        ) : citation.paragraph &&
-                          citation.paragraph !== "N/A" ? (
-                          <>Section {citation.paragraph}</>
-                        ) : (
-                          <>Book Reference</>
-                        )}
+                      <div style={{ color: "#6b7280", fontSize: "0.9em" }}>
+                        {/* Location line: show whatever is available */}
+                        <span>
+                          {citation.chapter && citation.chapter !== "N/A" ? (
+                            <>
+                              Chapter {citation.chapter}
+                              {citation.paragraph &&
+                                citation.paragraph !== "N/A" && (
+                                  <> &bull; Paragraph {citation.paragraph}</>
+                                )}
+                            </>
+                          ) : citation.paragraph &&
+                            citation.paragraph !== "N/A" ? (
+                            <>Paragraph {citation.paragraph}</>
+                          ) : (
+                            <>Source excerpt below</>
+                          )}
+                        </span>
                         {citation.similarity_percentage && (
                           <span
                             style={{
@@ -879,6 +878,24 @@ function MessageComponent({ message }: { message: Message }) {
                           >
                             {citation.similarity_percentage}% match
                           </span>
+                        )}
+                        {/* Always show the source passage so user can find it in the book */}
+                        {citation.text_preview && (
+                          <div
+                            style={{
+                              marginTop: "6px",
+                              padding: "6px 10px",
+                              backgroundColor: "#f0fdf4",
+                              borderLeft: "3px solid #6ee7b7",
+                              borderRadius: "0 4px 4px 0",
+                              fontSize: "0.85em",
+                              color: "#374151",
+                              fontStyle: "italic",
+                              lineHeight: "1.5",
+                            }}
+                          >
+                            &ldquo;{citation.text_preview}&rdquo;
+                          </div>
                         )}
                       </div>
                     ) : (
