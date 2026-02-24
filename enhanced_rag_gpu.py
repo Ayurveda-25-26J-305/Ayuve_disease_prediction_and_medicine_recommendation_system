@@ -515,18 +515,37 @@ Related Question: {qa_question}
                 f"Patient question: \"{question}\"\n"
                 f"Dosha: {dosha}\n\n"
                 f"Give exactly 3 practical Ayurvedic tips for a {dosha} person about: {topic_line}\n"
-                f"FORMAT RULES:\n"
-                f"- Number them 1. 2. 3.\n"
-                f"- Each tip = 1 sentence, max 20 words\n"
+                f"FORMAT RULES (follow strictly):\n"
+                f"- Start EVERY tip with the • symbol\n"
+                f"- Each tip = 1 short sentence, max 20 words\n"
                 f"- Tips must be NEW — not already in: {answer[:120]}\n"
-                f"- No introductions, no conclusions\n\n"
-                f"1."
+                f"- No introductions, no conclusions, no paragraphs\n\n"
+                f"•"
             )
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
-            tips = tips.strip()
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
+
+            # Prepend the leading bullet the prompt ended with, then enforce bullet format
+            import re as _re
+            raw_tips = ("• " + raw_tips).strip()
+
+            if '•' in raw_tips:
+                tips = raw_tips
+            else:
+                # Convert numbered list → bullets
+                converted = _re.sub(r'^\d+\.\s+', '• ', raw_tips, flags=_re.MULTILINE)
+                if '•' in converted:
+                    tips = converted
+                else:
+                    sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_tips) if s.strip()]
+                    tips = '\n'.join(f'• {s}' for s in sents[:3])
+
+            # Trim to max 3 bullet tips
+            tip_lines = [l for l in tips.splitlines() if l.strip().startswith('•')]
+            tips = '\n'.join(tip_lines[:3]) if tip_lines else tips.strip()
+
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
         except Exception as e:
