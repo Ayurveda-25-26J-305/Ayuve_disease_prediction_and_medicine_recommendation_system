@@ -122,7 +122,7 @@ class ValidationEngine:
         for i, doc in enumerate(retrieved_docs):
             source_name = doc.get('source', 'Unknown')
             similarity = float(np.dot(answer_emb, doc_embs[i]))
-            agrees = similarity > 0.55
+            agrees = similarity > 0.65  # stricter threshold — domain texts cluster around 0.65-0.85
             metadata = doc.get('metadata', {})
 
             agreement_info = {
@@ -148,13 +148,13 @@ class ValidationEngine:
         Returns:
             Agreement level string
         """
-        if similarity >= 0.80:
+        if similarity >= 0.82:
             return 'strong'
-        elif similarity >= 0.65:
+        elif similarity >= 0.72:
             return 'high'
-        elif similarity >= 0.55:
+        elif similarity >= 0.65:
             return 'agrees'
-        elif similarity >= 0.45:
+        elif similarity >= 0.55:
             return 'partial'
         else:
             return 'weak'
@@ -232,22 +232,22 @@ class ValidationEngine:
         
         avg_weighted_quality = np.mean(weighted_similarities)
         
-        # Normalize quality to 0-1 range (similarities are already 0-1)
-        normalized_quality = avg_weighted_quality
+        # Calibrate quality: stretch the meaningful range 0.45–0.95 → 0–1.
+        # Without this, all Ayurvedic-domain texts cluster at 0.65–0.85, inflating
+        # normalized_quality and pushing every answer to 80–100% confidence.
+        normalized_quality = max(0.0, (avg_weighted_quality - 0.45) / 0.50)
         
-        # Component 3: Consistency bonus (reward when all sources are similar quality)
+        # Component 3: Consistency bonus (lower variance = more consistent = higher bonus)
         similarity_variance = np.var([a['similarity'] for a in agreements])
-        # Lower variance = more consistent = higher bonus (max 1.0)
         consistency_bonus = max(0, 1.0 - (similarity_variance * 10))
         
-        # Final confidence (35% agreement, 50% quality, 15% consistency)
-        # This formula better reflects answer quality for paraphrased/summarized content
+        # Final confidence (35% agreement, 50% calibrated quality, 15% consistency)
         confidence = (agreement_ratio * 0.35) + (normalized_quality * 0.50) + (consistency_bonus * 0.15)
         
-        # Apply boost for high-quality sources (if avg similarity > 0.58, boost by up to 10%)
-        if normalized_quality > 0.58:
-            quality_boost = min(0.10, (normalized_quality - 0.58) * 0.5)
-            confidence = min(1.0, confidence + quality_boost)
+        # Small boost only when raw quality is genuinely high (>0.75), capped at 5%
+        if avg_weighted_quality > 0.75:
+            quality_boost = min(0.05, (avg_weighted_quality - 0.75) * 0.25)
+            confidence = min(0.92, confidence + quality_boost)
         
         # Convert to percentage
         confidence_percentage = confidence * 100

@@ -611,7 +611,8 @@ Related Question: {question}
             # Add type-specific fields
             if doc_type == "book":
                 citation["chapter"] = meta.get("chapter", "N/A")
-                citation["paragraph"] = meta.get("paragraph", "N/A")
+                # Fall back to 'verse' key — some books (e.g. Sanskrit texts) use 'verse' not 'paragraph'
+                citation["paragraph"] = meta.get("paragraph", meta.get("verse", "N/A"))
             else:
                 # QA entry
                 citation["qa_id"] = meta.get("question_id", "N/A")
