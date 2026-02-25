@@ -27,9 +27,12 @@ class FAISSVectorDB:
             embedding_model_name: HuggingFace model name for embeddings
             index_path: Directory to save/load FAISS index
         """
-        print(f"Loading embedding model: {embedding_model_name} (CPU)")
-        # Force CPU to save GPU memory for the main LLM
-        self.embedding_model = SentenceTransformer(embedding_model_name, device="cpu")
+        # Use GPU if available (much faster for bulk embedding during DB build).
+        # Falls back to CPU automatically when GPU is occupied by the LLM at query time.
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Loading embedding model: {embedding_model_name} ({device.upper()})")
+        self.embedding_model = SentenceTransformer(embedding_model_name, device=device)
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
         self.index_path = index_path
         
@@ -44,7 +47,7 @@ class FAISSVectorDB:
         
         print(f" FAISS Vector DB initialized (dimension: {self.embedding_dim})")
     
-    def create_embeddings(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
+    def create_embeddings(self, texts: List[str], batch_size: int = 256) -> np.ndarray:
         """
         Generate embeddings for a list of texts
         
