@@ -676,9 +676,9 @@ Related Question: {qa_question}
         ]
         print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
 
-        # Generate answer
+        # Generate answer — min_new_tokens forces model to produce at least 3 bullets
         print("💭 Generating answer...")
-        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
+        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens, min_new_tokens=80)
 
         # Strip any leading bullet/dash the model added (prompt already ends with '•')
         # This prevents double-prefix like '• - text' or '• • text'
