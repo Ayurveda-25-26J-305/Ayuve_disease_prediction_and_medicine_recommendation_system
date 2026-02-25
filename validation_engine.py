@@ -122,7 +122,7 @@ class ValidationEngine:
         for i, doc in enumerate(retrieved_docs):
             source_name = doc.get('source', 'Unknown')
             similarity = float(np.dot(answer_emb, doc_embs[i]))
-            agrees = similarity > 0.65  # stricter threshold — domain texts cluster around 0.65-0.85
+            agrees = similarity > 0.55  # threshold — domain texts cluster around 0.55-0.85
             metadata = doc.get('metadata', {})
 
             agreement_info = {
@@ -148,13 +148,13 @@ class ValidationEngine:
         Returns:
             Agreement level string
         """
-        if similarity >= 0.82:
+        if similarity >= 0.80:
             return 'strong'
-        elif similarity >= 0.72:
+        elif similarity >= 0.70:
             return 'high'
-        elif similarity >= 0.65:
-            return 'agrees'
         elif similarity >= 0.55:
+            return 'agrees'
+        elif similarity >= 0.45:
             return 'partial'
         else:
             return 'weak'
@@ -232,10 +232,10 @@ class ValidationEngine:
         
         avg_weighted_quality = np.mean(weighted_similarities)
         
-        # Calibrate quality: stretch the meaningful range 0.45–0.95 → 0–1.
-        # Without this, all Ayurvedic-domain texts cluster at 0.65–0.85, inflating
-        # normalized_quality and pushing every answer to 80–100% confidence.
-        normalized_quality = max(0.0, (avg_weighted_quality - 0.45) / 0.50)
+        # Calibrate quality: stretch the meaningful range 0.35–0.85 → 0–1.
+        # Ayurvedic domain texts cluster at 0.55–0.75 similarity; use 0.35 baseline
+        # so mid-range answers score ~50% quality rather than near-zero.
+        normalized_quality = max(0.0, min(1.0, (avg_weighted_quality - 0.35) / 0.50))
         
         # Component 3: Consistency bonus (lower variance = more consistent = higher bonus)
         similarity_variance = np.var([a['similarity'] for a in agreements])

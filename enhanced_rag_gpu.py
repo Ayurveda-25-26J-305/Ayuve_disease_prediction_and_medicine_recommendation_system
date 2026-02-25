@@ -150,8 +150,8 @@ class EnhancedAyurvedicRAG:
             if doc_type == "book":
                 chapter = meta.get("chapter", "N/A")
                 paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
-                # 350 chars gives LLM enough content to synthesise a real answer (was 200)
-                doc_text = doc.get("text", "")[:350]
+                # 500 chars gives LLM richer content to synthesise informative bullets
+                doc_text = doc.get("text", "")[:500]
                 block = f"""[Source {i}]
 Book: {book}
 Chapter: {chapter}
@@ -161,8 +161,8 @@ Verse/Paragraph: {paragraph}
             else:
                 # QA dataset entry
                 qa_question = meta.get("question", "N/A")
-                # Use 350 chars per source (was 200)
-                doc_text = doc.get("text", "")[:350]
+                # Use 500 chars per QA source for richer context
+                doc_text = doc.get("text", "")[:500]
                 block = f"""[Source {i}]
 Type: Ayurvedic Q&A Reference
 Related Question: {qa_question}
@@ -514,23 +514,24 @@ Related Question: {qa_question}
             topic_line = question[:60].strip()
             prompt = (
                 f"Patient question: \"{question}\"\nDosha: {dosha}\n\n"
-                f"Give 3 Ayurvedic lifestyle tips for a {dosha} person about: {topic_line}\n"
-                f"STRICT RULES:\n"
-                f"• Each tip: 1 sentence, MAXIMUM 15 WORDS, end with a period.\n"
-                f"• Start every tip with • symbol on its own line.\n"
-                f"• Tips must be DIFFERENT from: {answer[:80]}\n"
-                f"• NO introductions, NO paragraphs.\n"
+                f"Give 4 Ayurvedic lifestyle tips for a {dosha} person about: {topic_line}\n"
+                f"RULES:\n"
+                f"• Each tip: 1 complete sentence, 15–25 words, ending with a period.\n"
+                f"• Each tip MUST mention a specific herb, food, routine, or Ayurvedic practice.\n"
+                f"• Tips must be DIFFERENT from the main answer and cover practical daily advice.\n"
+                f"• Start every tip with • symbol on its own line. NO introduction text.\n"
                 f"Example:\n"
-                f"• Drink warm water with ginger each morning to aid digestion.\n"
-                f"• Avoid spicy foods that aggravate {dosha} dosha imbalances.\n"
-                f"• Practice daily oil massage with warm sesame oil for grounding.\n\n"
-                f"Now give 3 tips for {dosha} about: {topic_line}\n\n"
+                f"• Drink warm turmeric milk every night to calm {dosha} dosha and improve sleep quality.\n"
+                f"• Avoid cold, raw foods that aggravate {dosha} and prefer warm, cooked meals daily.\n"
+                f"• Practice Abhyanga (self-oil massage) with sesame oil each morning before bathing.\n"
+                f"• Add ashwagandha powder to warm milk at bedtime to support strength and calm nerves.\n\n"
+                f"Now give 4 practical tips for {dosha} about: {topic_line}\n\n"
                 f"•"
             )
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=160)
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=200, min_new_tokens=60)
 
             # Strip any leading bullet/dash the model added (prompt ends with '•')
             # Prevents double-prefix like '• • text' or '• - text'
@@ -540,11 +541,11 @@ Related Question: {qa_question}
             def _clip_bullet(b: str) -> str:
                 b = b.strip()
                 b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
-                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[30:])
+                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[40:])
                 if m:
-                    b = b[:30 + m.start() + 1].strip()
-                if len(b) > 130:
-                    b = b[:130].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                    b = b[:40 + m.start() + 1].strip()
+                if len(b) > 200:
+                    b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
                 return b
 
             if '•' in raw_tips:
@@ -556,7 +557,7 @@ Related Question: {qa_question}
                 )
 
             tip_lines = [l for l in tips_raw.splitlines() if l.strip().startswith('•')]
-            tips = '\n'.join(_clip_bullet(t) for t in tip_lines[:3])
+            tips = '\n'.join(_clip_bullet(t) for t in tip_lines[:4])
 
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
@@ -642,43 +643,47 @@ Related Question: {qa_question}
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # 220 tokens = comfortably fits 3 bullets of up to 20 words each
-        dynamic_tokens = 220
+        # 320 tokens = comfortably fits 4 rich summary bullets of up to 25 words each
+        dynamic_tokens = 320
 
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
 
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
 
-        # Strict short-bullet prompt. Prompt ends with '•' so model continues the list.
-        context_summary = context_text[:1800]
-        topic_hint = question[:70].strip()
+        # Rich summarization prompt — asks for 4 informative bullets covering
+        # causes/benefits, treatments/herbs, lifestyle advice, and a key fact.
+        context_summary = context_text[:2500]
+        topic_hint = question[:80].strip()
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are an Ayurvedic doctor. Patient question: \"{question}\"\n\n"
-                    f"Knowledge:\n{context_summary}\n\n"
-                    f"Write EXACTLY 3 bullet points answering: {topic_hint}\n"
-                    f"STRICT RULES:\n"
-                    f"• Each bullet: 1 sentence, MAXIMUM 15 WORDS, end with a period.\n"
-                    f"• Start every bullet with • symbol on its own line.\n"
-                    f"• Name a specific herb, oil or treatment.\n"
-                    f"• NO paragraphs. NO introductions. NO extra text.\n"
-                    f"Example format:\n"
-                    f"• Turmeric reduces inflammation and purifies the blood.\n"
-                    f"• Ginger tea aids digestion and relieves nausea.\n"
-                    f"• Ashwagandha strengthens immunity and reduces stress.\n\n"
-                    f"Now answer about: {topic_hint}\n\n"
+                    f"You are a knowledgeable Ayurvedic doctor writing a clear summary for a patient.\n"
+                    f"Patient question: \"{question}\"\n\n"
+                    f"Ayurvedic Knowledge Sources:\n{context_summary}\n\n"
+                    f"Task: Write a SUMMARY with EXACTLY 4 bullet points that directly answer: {topic_hint}\n\n"
+                    f"RULES:\n"
+                    f"• Each bullet point = 1 complete informative sentence (15–25 words).\n"
+                    f"• Each bullet MUST mention a specific herb, remedy, dosha, or Ayurvedic concept.\n"
+                    f"• Cover different aspects: e.g. main benefit, remedy/herb, dosha effect, lifestyle tip.\n"
+                    f"• Start EVERY bullet with the • symbol on its own line.\n"
+                    f"• NO introduction sentence. NO conclusion. NO numbered lists. ONLY the 4 bullets.\n\n"
+                    f"Example (for a different topic):\n"
+                    f"• Turmeric contains curcumin which reduces Pitta-driven inflammation in joints and tissues.\n"
+                    f"• Daily intake of turmeric with warm milk improves digestion and detoxifies the liver.\n"
+                    f"• Turmeric balances Kapha and Vata doshas and strengthens the immune system naturally.\n"
+                    f"• Applying turmeric paste externally heals skin infections and reduces redness effectively.\n\n"
+                    f"Now write 4 bullet point summary about: {topic_hint}\n\n"
                     f"•"
                 )
             }
         ]
         print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
 
-        # Generate answer — min_new_tokens forces model to produce at least 3 bullets
+        # Generate answer — min_new_tokens=120 forces model to produce at least 4 bullets
         print("💭 Generating answer...")
-        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens, min_new_tokens=80)
+        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens, min_new_tokens=120)
 
         # Strip any leading bullet/dash the model added (prompt already ends with '•')
         # This prevents double-prefix like '• - text' or '• • text'
@@ -686,19 +691,19 @@ Related Question: {qa_question}
         raw_answer_clean = _re.sub(r'^[\s•\-\*]+', '', raw_answer).strip()
         raw_combined = ("• " + raw_answer_clean).strip()
 
-        # Helper: hard-clip a bullet to its first sentence, min 30 chars before clipping
+        # Helper: hard-clip a bullet to its first full sentence, allow up to 200 chars
         import re as _re
         def _clip_bullet(b: str) -> str:
             b = b.strip()
             # Strip accidental double prefix like '• -' or '• •'
             b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
-            # Find first sentence end after at least 30 chars
-            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[30:])
+            # Find first sentence end after at least 40 chars (allows richer content)
+            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[40:])
             if m:
-                b = b[:30 + m.start() + 1].strip()
-            # Absolute hard cap at 130 chars
-            if len(b) > 130:
-                b = b[:130].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                b = b[:40 + m.start() + 1].strip()
+            # Hard cap at 200 chars
+            if len(b) > 200:
+                b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
             return b
 
         # Guarantee • bullet format
@@ -710,11 +715,11 @@ Related Question: {qa_question}
                 base_answer = converted
             else:
                 sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
-                base_answer = '\n'.join(f'• {s}' for s in sents[:3])
+                base_answer = '\n'.join(f'• {s}' for s in sents[:4])
 
-        # Extract bullets, hard-truncate each one, keep max 3
+        # Extract bullets, hard-truncate each one, keep max 4
         bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
-        bullets = [_clip_bullet(b) for b in bullets[:3]]
+        bullets = [_clip_bullet(b) for b in bullets[:4]]
         if bullets:
             base_answer = '\n'.join(bullets)
         
@@ -796,35 +801,64 @@ Related Question: {qa_question}
         
         if self.enable_translation and self.translator and detected_language == 'si':
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
-            # Workflow: Singlish/Sinhala input → English processing → Sinhala output
-            print("🔄 Translating answer to Sinhala...")
-            
-            # Step 1: Simplify English for better translation
-            simplified_english = self._simplify_for_translation(final_answer)
-            print(f"📝 Simplified English: {simplified_english[:100]}...")
-            
-            # Step 2: Translate to Sinhala
-            raw_translation = self.translator.translate_en_to_si(simplified_english)
-            
-            # Step 3: Clean up translated text (remove gibberish, incomplete sentences)
-            display_answer = self._cleanup_translated_answer(raw_translation)
+            # Translate each bullet individually for better translation quality
+            print("🔄 Translating answer to Sinhala (bullet-by-bullet)...")
+            import re as _re2
+            bullet_lines = [l for l in final_answer.splitlines() if l.strip().startswith('•')]
+            if bullet_lines:
+                translated_bullets = []
+                for bl in bullet_lines:
+                    content = _re2.sub(r'^•\s*', '', bl).strip()
+                    # Ensure sentence ends with period for cleaner translation
+                    if content and not content.endswith(('.', '!', '?')):
+                        content += '.'
+                    try:
+                        si_content = self.translator.translate_en_to_si(content)
+                        si_clean = self._cleanup_translated_answer(si_content).strip()
+                        # Strip any bullet the cleanup may have added
+                        si_clean = _re2.sub(r'^[-•]\s*', '', si_clean).strip()
+                        if si_clean and len(si_clean) >= 5:
+                            translated_bullets.append(f'• {si_clean}')
+                    except Exception as _te:
+                        print(f"⚠️  Bullet translation failed: {_te}")
+                        translated_bullets.append(bl)  # keep English bullet as fallback
+                if translated_bullets:
+                    display_answer = '\n'.join(translated_bullets)
+                    print(f"✓ Translated {len(translated_bullets)} bullets to Sinhala")
+                else:
+                    display_answer = final_answer
+            else:
+                # No bullets — translate as single block
+                simplified_english = self._simplify_for_translation(final_answer)
+                raw_translation = self.translator.translate_en_to_si(simplified_english)
+                display_answer = self._cleanup_translated_answer(raw_translation)
+                if not display_answer or len(display_answer.strip()) < 20:
+                    display_answer = final_answer
             print(f"✓ Translation complete: {display_answer[:100]}...")
-            
-            # Failsafe: If cleanup removed everything, use original English
-            if not display_answer or len(display_answer.strip()) < 20:
-                print("⚠️  Translation cleanup removed too much, using English")
-                display_answer = final_answer
 
         # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
-            print("🔄 Translating personalized tips to Sinhala...")
-            simplified_tips = self._simplify_for_translation(personalized_tips)
-            raw_tips_si = self.translator.translate_en_to_si(simplified_tips)
-            tips_si = self._cleanup_translated_answer(raw_tips_si)
-            if tips_si and len(tips_si.strip()) >= 20:
-                personalized_tips = tips_si
-            else:
-                print("⚠️  Tips translation cleanup removed too much, keeping English")
+            print("🔄 Translating personalized tips to Sinhala (bullet-by-bullet)...")
+            import re as _re3
+            tip_lines = [l for l in personalized_tips.splitlines() if l.strip().startswith('•')]
+            if tip_lines:
+                translated_tips = []
+                for tl in tip_lines:
+                    content = _re3.sub(r'^•\s*', '', tl).strip()
+                    if content and not content.endswith(('.', '!', '?')):
+                        content += '.'
+                    try:
+                        si_tip = self.translator.translate_en_to_si(content)
+                        si_tip_clean = self._cleanup_translated_answer(si_tip).strip()
+                        si_tip_clean = _re3.sub(r'^[-•]\s*', '', si_tip_clean).strip()
+                        if si_tip_clean and len(si_tip_clean) >= 5:
+                            translated_tips.append(f'• {si_tip_clean}')
+                    except Exception:
+                        translated_tips.append(tl)
+                if translated_tips:
+                    personalized_tips = '\n'.join(translated_tips)
+                else:
+                    print("⚠️  Tips translation failed, keeping English")
 
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
