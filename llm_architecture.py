@@ -136,7 +136,7 @@ class LLMArchitecture:
         self.model.eval()
         logger.info("LLM initialized successfully")
 
-    def generate_from_messages(self, messages: list, max_new_tokens: int = None, min_new_tokens: int = 0) -> str:
+    def generate_from_messages(self, messages: list, max_new_tokens: int = None, min_new_tokens: int = 0, temperature: float = 0.4) -> str:
         """
         Preferred method for chat models — tokenizes directly from messages using
         apply_chat_template(tokenize=True) so special tokens are NEVER re-tokenized
@@ -174,7 +174,7 @@ class LLMArchitecture:
                 max_new_tokens=max_new_tokens or self.config.get("max_new_tokens", 200),
                 min_new_tokens=min_new_tokens,
                 do_sample=True,
-                temperature=0.4,
+                temperature=temperature,
                 top_p=0.9,
                 repetition_penalty=1.15,
                 pad_token_id=self.tokenizer.eos_token_id,

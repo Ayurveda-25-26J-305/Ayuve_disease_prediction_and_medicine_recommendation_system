@@ -138,6 +138,80 @@ class EnhancedAyurvedicRAG:
         
         logger.info("EnhancedAyurvedicRAG initialized (GPU FORCED)")
     
+    def _clean_garbled_text(self, text: str) -> str:
+        """
+        Remove tokenization artifacts from 4-bit quantized model output.
+        Patterns like 'turmer03r', 'exac0stuate', 'btwn', 'wth' — digits
+        injected into words or heavily abbreviated words — are stripped and
+        the sentence is re-joined cleanly.
+        """
+        import re as _re
+
+        if not text:
+            return text
+
+        lines = text.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            if not line.strip():
+                continue
+
+            # Extract bullet prefix if present
+            prefix = ''
+            content = line
+            m = _re.match(r'^([\s•\-]\s*)', line)
+            if m:
+                prefix = m.group(1)
+                content = line[m.end():]
+
+            words = content.split()
+            good_words = []
+            for word in words:
+                # Strip trailing punctuation for the check, restore later
+                punct_trail = ''
+                pm = _re.search(r'[.,!?;:]+$', word)
+                if pm:
+                    punct_trail = pm.group()
+                    core = word[:pm.start()]
+                else:
+                    core = word
+
+                # Detect garbled: mixed letters+digits inside a word
+                # e.g. "turmer03r", "exac0stuate", "btwn", "wth"
+                # Rule: if a word has both letters and digits interleaved (not a
+                # standalone number or common abbreviation like "1st", "2nd")
+                has_letter = bool(_re.search(r'[a-zA-Z]', core))
+                has_digit  = bool(_re.search(r'\d', core))
+                is_ordinal = bool(_re.match(r'^\d+(st|nd|rd|th)$', core, _re.I))
+                is_number  = bool(_re.match(r'^\d+$', core))
+
+                if has_letter and has_digit and not is_ordinal and not is_number:
+                    # Garbled word — skip it entirely
+                    continue
+
+                # Also remove very short non-word fragments like "btwn", "wth", "wlt"
+                # (consonant clusters with no vowel, >3 chars)
+                if (len(core) >= 3 and has_letter and not has_digit
+                        and not _re.search(r'[aeiouAEIOU]', core)
+                        and core.lower() not in {'gym', 'dry', 'try', 'why',
+                                                  'fly', 'sky', 'cry', 'fry',
+                                                  'sly', 'spy', 'shy', 'thy'}):
+                    continue
+
+                good_words.append(word)
+
+            if good_words:
+                cleaned = prefix + ' '.join(good_words)
+                # Fix double spaces
+                cleaned = _re.sub(r'  +', ' ', cleaned).strip()
+                # Ensure line ends with punctuation
+                if cleaned and not cleaned.rstrip()[-1] in '.!?':
+                    cleaned = cleaned.rstrip() + '.'
+                cleaned_lines.append(cleaned)
+
+        return '\n'.join(cleaned_lines)
+
     def _build_context_with_citations(self, docs):
         """Build LLM context including citations"""
         context_blocks = []
@@ -512,26 +586,38 @@ Related Question: {qa_question}
         try:
             import re as _re
             topic_line = question[:60].strip()
+            # Only allow real Ayurvedic herbs — prevents hallucinated ingredients
+            AYURVEDIC_HERBS = (
+                "turmeric, ginger, ashwagandha, neem, tulsi, triphala, amla, brahmi, "
+                "sesame oil, ghee, cardamom, cumin, coriander, fennel, guduchi, shatavari, "
+                "licorice, pippali, haritaki, bibhitaki, sandalwood, coconut oil"
+            )
             prompt = (
-                f"Patient question: \"{question}\"\nDosha: {dosha}\n\n"
-                f"Give 4 Ayurvedic lifestyle tips for a {dosha} person about: {topic_line}\n"
-                f"RULES:\n"
-                f"• Each tip: 1 complete sentence, 15–25 words, ending with a period.\n"
-                f"• Each tip MUST mention a specific herb, food, routine, or Ayurvedic practice.\n"
-                f"• Tips must be DIFFERENT from the main answer and cover practical daily advice.\n"
-                f"• Start every tip with • symbol on its own line. NO introduction text.\n"
-                f"Example:\n"
-                f"• Drink warm turmeric milk every night to calm {dosha} dosha and improve sleep quality.\n"
-                f"• Avoid cold, raw foods that aggravate {dosha} and prefer warm, cooked meals daily.\n"
-                f"• Practice Abhyanga (self-oil massage) with sesame oil each morning before bathing.\n"
-                f"• Add ashwagandha powder to warm milk at bedtime to support strength and calm nerves.\n\n"
-                f"Now give 4 practical tips for {dosha} about: {topic_line}\n\n"
+                f"You are an Ayurvedic doctor. Patient question: \"{question}\"\nDosha: {dosha}\n\n"
+                f"Give 4 practical Ayurvedic lifestyle tips for a {dosha} type person.\n\n"
+                f"STRICT RULES:\n"
+                f"• Each tip: 1 complete sentence, 15–20 words, ending with a period.\n"
+                f"• ONLY use herbs and practices from this list: {AYURVEDIC_HERBS}\n"
+                f"• Do NOT invent fictional remedies or non-Ayurvedic ingredients.\n"
+                f"• Each tip must be specific and actionable.\n"
+                f"• Start every tip with • symbol on its own line. NO introduction text.\n\n"
+                f"Example (topic: digestion):\n"
+                f"• Drink warm ginger tea before meals to stimulate Agni and ease digestion.\n"
+                f"• Add a pinch of turmeric and cumin to cooked meals to balance Pitta dosha.\n"
+                f"• Avoid cold drinks and raw food which aggravate Vata and slow digestion.\n"
+                f"• Take one teaspoon of triphala powder with warm water before bed nightly.\n\n"
+                f"Now give 4 tips for {dosha} dosha about: {topic_line}\n\n"
                 f"•"
             )
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=200, min_new_tokens=60)
+            raw_tips = self.llm.generate_from_messages(
+                messages, max_new_tokens=200, min_new_tokens=60, temperature=0.25
+            )
+
+            # Remove tokenization artifacts (e.g. 'turmer03r', 'btwn') from tips
+            raw_tips = self._clean_garbled_text(raw_tips)
 
             # Strip any leading bullet/dash the model added (prompt ends with '•')
             # Prevents double-prefix like '• • text' or '• - text'
@@ -557,7 +643,24 @@ Related Question: {qa_question}
                 )
 
             tip_lines = [l for l in tips_raw.splitlines() if l.strip().startswith('•')]
-            tips = '\n'.join(_clip_bullet(t) for t in tip_lines[:4])
+            tip_bullets = [_clip_bullet(t) for t in tip_lines[:4]]
+
+            # Fallback: if model didn't produce 3+ bullet lines, split on sentence boundaries
+            if len(tip_bullets) < 3:
+                extra = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_tips)
+                         if len(s.strip()) > 20]
+                used = set()
+                for b in tip_bullets:
+                    used.update(b.lower().split())
+                for sent in extra:
+                    if len(tip_bullets) >= 4:
+                        break
+                    clean = _re.sub(r'^[\s•\-\*\d\.]+', '', sent).strip()
+                    if clean and len(clean) > 20 and len(set(clean.lower().split()) & used) <= 3:
+                        tip_bullets.append(_clip_bullet(f'• {clean}'))
+                        used.update(clean.lower().split())
+
+            tips = '\n'.join(tip_bullets)
 
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
@@ -685,6 +788,9 @@ Related Question: {qa_question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens, min_new_tokens=120)
 
+        # Remove tokenization artifacts (e.g. 'turmer03r', 'exac0stuate') before processing
+        raw_answer = self._clean_garbled_text(raw_answer)
+
         # Strip any leading bullet/dash the model added (prompt already ends with '•')
         # This prevents double-prefix like '• - text' or '• • text'
         import re as _re
@@ -720,6 +826,29 @@ Related Question: {qa_question}
         # Extract bullets, hard-truncate each one, keep max 4
         bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
         bullets = [_clip_bullet(b) for b in bullets[:4]]
+
+        # FALLBACK: if model didn't produce enough • lines, split raw answer into sentences
+        if len(bullets) < 3:
+            # Split the raw output on sentence boundaries
+            extra_sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_answer)
+                           if len(s.strip()) > 25]
+            # Track words already captured to avoid duplication
+            used_words = set()
+            for b in bullets:
+                used_words.update(b.lower().split())
+            for sent in extra_sents:
+                if len(bullets) >= 4:
+                    break
+                clean = _re.sub(r'^[\s•\ -\ *\ d\ .]+', '', sent).strip()
+                # Skip if too similar to existing bullets (>3 words overlap)
+                sent_words = set(clean.lower().split())
+                if len(sent_words & used_words) > 3:
+                    continue
+                if clean and len(clean) > 25:
+                    new_b = _clip_bullet(f'• {clean}')
+                    bullets.append(new_b)
+                    used_words.update(sent_words)
+
         if bullets:
             base_answer = '\n'.join(bullets)
         
