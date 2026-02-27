@@ -138,77 +138,117 @@ class EnhancedAyurvedicRAG:
         
         logger.info("EnhancedAyurvedicRAG initialized (GPU FORCED)")
     
+    # Phrases that indicate the model broke character and started talking about itself
+    _SELF_TALK_PATTERNS = [
+        r"i apologize", r"apologies for", r"i'm sorry", r"sorry for",
+        r"let me (re)?address", r"let'?s address", r"let me clarify",
+        r"as an ai", r"as a language model", r"i need to clarify",
+        r"i must clarify", r"i should note", r"please note that",
+        r"i cannot", r"i can'?t provide", r"i will now",
+        r"regarding your (request|question)",
+        r"to address your", r"now regarding", r"let me now",
+        r"for any confusion", r"any confusion earlier",
+    ]
+
     def _clean_garbled_text(self, text: str) -> str:
         """
-        Remove tokenization artifacts from 4-bit quantized model output.
-        Patterns like 'turmer03r', 'exac0stuate', 'btwn', 'wth' — digits
-        injected into words or heavily abbreviated words — are stripped and
-        the sentence is re-joined cleanly.
+        Clean 4-bit quantized model output:
+        1. Remove tokenization artifacts  (turmer03r, exac0stuate, btwn)
+        2. Remove LLM self-talk lines     (I apologize, as an AI, let's address)
+        3. Truncate a bullet at the point where self-talk begins mid-sentence
+        4. Discard short/incomplete lines (<20 chars of real content)
         """
         import re as _re
 
         if not text:
             return text
 
+        # Compile self-talk pattern once
+        self_talk_re = _re.compile(
+            '|'.join(self._SELF_TALK_PATTERNS), _re.IGNORECASE
+        )
+
         lines = text.split('\n')
         cleaned_lines = []
 
         for line in lines:
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped:
                 continue
+
+            # --- SELF-TALK: skip the whole line if it IS self-talk ---
+            content_lower = stripped.lower()
+            if self_talk_re.search(content_lower) and not stripped.startswith('•'):
+                continue
+
+            # --- SELF-TALK: if a bullet contains self-talk mid-sentence, truncate ---
+            if stripped.startswith('•'):
+                m_st = self_talk_re.search(stripped)
+                if m_st:
+                    # Keep only the text before the self-talk kicks in
+                    truncated = stripped[:m_st.start()].strip().rstrip(',:; ')
+                    if len(truncated) < 22:  # too short after truncation — discard
+                        continue
+                    # Ensure it ends with a period
+                    if truncated and truncated[-1] not in '.!?':
+                        truncated += '.'
+                    stripped = truncated
+                    line = stripped
 
             # Extract bullet prefix if present
             prefix = ''
-            content = line
-            m = _re.match(r'^([\s•\-]\s*)', line)
+            content = stripped
+            m = _re.match(r'^([•\-]\s*)', stripped)
             if m:
                 prefix = m.group(1)
-                content = line[m.end():]
+                content = stripped[m.end():]
 
+            # --- GARBLED WORD REMOVAL ---
             words = content.split()
             good_words = []
             for word in words:
-                # Strip trailing punctuation for the check, restore later
-                punct_trail = ''
                 pm = _re.search(r'[.,!?;:]+$', word)
                 if pm:
-                    punct_trail = pm.group()
                     core = word[:pm.start()]
                 else:
                     core = word
 
-                # Detect garbled: mixed letters+digits inside a word
-                # e.g. "turmer03r", "exac0stuate", "btwn", "wth"
-                # Rule: if a word has both letters and digits interleaved (not a
-                # standalone number or common abbreviation like "1st", "2nd")
                 has_letter = bool(_re.search(r'[a-zA-Z]', core))
                 has_digit  = bool(_re.search(r'\d', core))
                 is_ordinal = bool(_re.match(r'^\d+(st|nd|rd|th)$', core, _re.I))
                 is_number  = bool(_re.match(r'^\d+$', core))
 
+                # Drop words with mixed letters+digits (e.g. turmer03r)
                 if has_letter and has_digit and not is_ordinal and not is_number:
-                    # Garbled word — skip it entirely
                     continue
 
-                # Also remove very short non-word fragments like "btwn", "wth", "wlt"
-                # (consonant clusters with no vowel, >3 chars)
+                # Drop consonant-only clusters ≥3 chars (e.g. btwn, wth)
                 if (len(core) >= 3 and has_letter and not has_digit
                         and not _re.search(r'[aeiouAEIOU]', core)
                         and core.lower() not in {'gym', 'dry', 'try', 'why',
                                                   'fly', 'sky', 'cry', 'fry',
-                                                  'sly', 'spy', 'shy', 'thy'}):
+                                                  'sly', 'spy', 'shy', 'thy',
+                                                  'nth'}):
                     continue
 
                 good_words.append(word)
 
-            if good_words:
-                cleaned = prefix + ' '.join(good_words)
-                # Fix double spaces
-                cleaned = _re.sub(r'  +', ' ', cleaned).strip()
-                # Ensure line ends with punctuation
-                if cleaned and not cleaned.rstrip()[-1] in '.!?':
-                    cleaned = cleaned.rstrip() + '.'
-                cleaned_lines.append(cleaned)
+            if not good_words:
+                continue
+
+            cleaned = prefix + ' '.join(good_words)
+            cleaned = _re.sub(r'  +', ' ', cleaned).strip()
+
+            # Discard very short lines (fragments)
+            real_content = _re.sub(r'^[•\-]\s*', '', cleaned).strip()
+            if len(real_content) < 20:
+                continue
+
+            # Ensure ends with punctuation
+            if cleaned and cleaned[-1] not in '.!?':
+                cleaned += '.'
+
+            cleaned_lines.append(cleaned)
 
         return '\n'.join(cleaned_lines)
 
@@ -784,9 +824,11 @@ Related Question: {qa_question}
         ]
         print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
 
-        # Generate answer — min_new_tokens=120 forces model to produce at least 4 bullets
+        # Generate answer — temperature=0.25 keeps output grounded; min 120 tokens = ~4 bullets
         print("💭 Generating answer...")
-        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens, min_new_tokens=120)
+        raw_answer = self.llm.generate_from_messages(
+            messages, max_new_tokens=dynamic_tokens, min_new_tokens=120, temperature=0.25
+        )
 
         # Remove tokenization artifacts (e.g. 'turmer03r', 'exac0stuate') before processing
         raw_answer = self._clean_garbled_text(raw_answer)
