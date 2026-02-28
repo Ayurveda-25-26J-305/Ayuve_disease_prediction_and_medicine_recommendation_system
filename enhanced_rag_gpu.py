@@ -140,6 +140,7 @@ class EnhancedAyurvedicRAG:
     
     # Phrases that indicate the model broke character and started talking about itself,
     # or is echoing source/author metadata instead of answering the question.
+    # Used for NON-BULLET lines — full aggressive set.
     _SELF_TALK_PATTERNS = [
         r"i apologize", r"apologies for", r"i'm sorry", r"sorry for",
         r"let me (re)?address", r"let'?s address", r"let me clarify",
@@ -149,9 +150,9 @@ class EnhancedAyurvedicRAG:
         r"regarding your (request|question)",
         r"to address your", r"now regarding", r"let me now",
         r"for any confusion", r"any confusion earlier",
-        # Author-echo patterns — model citing sources it shouldn't
+        # Author-echo patterns (non-bullet lines only)
         r"\w+'?s\s+(book|insights?|research|work|findings?|text|study|view)",
-        r"according to \w+",
+        r"according to [A-Z][a-z]+ [A-Z][a-z]+",  # two-word proper name e.g. "John Smith"
         r"as mentioned (in|by|across)",
         r"as stated (in|by)",
         r"as described (in|by)",
@@ -169,6 +170,34 @@ class EnhancedAyurvedicRAG:
         r"serves merely educational",
         r"modern medical advice",
         r"consult.*qualified.*before",
+        r"not a substitute for",
+        r"this information is for educational",
+    ]
+
+    # Reduced set used ONLY when truncating BULLET (•) lines.
+    # Citation-style phrases like "according to Ayurveda" or "as mentioned in
+    # Ayurvedic texts" are legitimate informational content — excluding them here
+    # prevents valid Ayurvedic bullets from being silently discarded.
+    _BULLET_SELF_TALK_PATTERNS = [
+        r"i apologize", r"apologies for", r"i'm sorry", r"sorry for",
+        r"let me (re)?address", r"let'?s address", r"let me clarify",
+        r"as an ai", r"as a language model", r"i need to clarify",
+        r"i must clarify", r"i should note", r"please note that",
+        r"i cannot", r"i can'?t provide", r"i will now",
+        r"regarding your (request|question)",
+        r"to address your", r"now regarding", r"let me now",
+        r"for any confusion", r"any confusion earlier",
+        r"\w+'?s\s+(book|insights?|research|work|findings?|text|study|view)",
+        r"note:.*assistant",
+        r"outside.*knowledge base",
+        r"beyond.*established facts",
+        r"hypothetical scenarios",
+        r"information.*april 20",
+        r"knowledge cutoff",
+        r"cannot address",
+        r"\(\*this note", r"\*this note",
+        r"serves merely educational",
+        r"modern medical advice",
         r"not a substitute for",
         r"this information is for educational",
     ]
@@ -195,9 +224,14 @@ class EnhancedAyurvedicRAG:
             "", text, flags=_re.IGNORECASE
         )
 
-        # Compile self-talk pattern once
+        # Compile self-talk patterns — full set for non-bullet lines,
+        # reduced "bullet-safe" set for bullet truncation so citation phrases
+        # like "according to Ayurveda" don't cause valid bullets to be discarded.
         self_talk_re = _re.compile(
             '|'.join(self._SELF_TALK_PATTERNS), _re.IGNORECASE
+        )
+        bullet_self_talk_re = _re.compile(
+            '|'.join(self._BULLET_SELF_TALK_PATTERNS), _re.IGNORECASE
         )
 
         lines = text.split('\n')
@@ -214,8 +248,11 @@ class EnhancedAyurvedicRAG:
                 continue
 
             # --- SELF-TALK: if a bullet contains self-talk mid-sentence, truncate ---
+            # Uses bullet_self_talk_re (reduced set) so phrases like
+            # "according to Ayurveda" or "as mentioned in Ayurvedic texts" are
+            # treated as informational content, not discarded.
             if stripped.startswith('•'):
-                m_st = self_talk_re.search(stripped)
+                m_st = bullet_self_talk_re.search(stripped)
                 if m_st:
                     # Keep only the text before the self-talk kicks in
                     truncated = stripped[:m_st.start()].strip().rstrip(',:; ')
@@ -684,9 +721,10 @@ class EnhancedAyurvedicRAG:
             # Remove tokenization artifacts (e.g. 'turmer03r', 'btwn') from tips
             raw_tips = self._clean_garbled_text(raw_tips)
 
-            # Strip any leading bullet/dash the model added (prompt ends with '•')
-            # Prevents double-prefix like '• • text' or '• - text'
-            raw_tips = _re.sub(r'^[\s•\-\*]+', '', raw_tips).strip()
+            # Strip leading bullets, dashes, dots, or punctuation from raw output.
+            # Prompt ends with '•' so model response may begin with '. Tip...' or
+            # '• Tip...' — strip all leading non-alpha chars, then add clean '• '.
+            raw_tips = _re.sub(r'^[\s•\-\*\.\,\:\;]+', '', raw_tips).strip()
             raw_tips = ("• " + raw_tips).strip()
 
             def _clip_bullet(b: str) -> str:
@@ -856,8 +894,9 @@ class EnhancedAyurvedicRAG:
                 f"- Each bullet = 1 complete informative sentence (15–25 words).\n"
                 f"- Cover: main health benefit, how to use it, which doshas it affects, one caution.\n"
                 f"- Only write about {h}. Do NOT mention other herbs unless combined with {h}.\n"
-                f"- No author names. No numbered lists. No introductions. Start every line with •\n\n"
-                f"• "
+                f"- No author names. No introductions. Start every line with • symbol.\n"
+                f"- If the model uses 1. 2. 3. format that is also acceptable.\n\n"
+                f"Write 4 bullet points about {h} now:"
             )
             messages = [{"role": "user", "content": prompt}]
             raw = self.llm.generate_from_messages(
@@ -865,13 +904,12 @@ class EnhancedAyurvedicRAG:
             )
             raw = self._clean_garbled_text(raw)
 
-            # Reconstruct with first bullet that was consumed by the prompt prefix
-            raw_with_first = ("• " + raw.lstrip("• \n\r")).strip()
-            bullets = [l.strip() for l in raw_with_first.splitlines() if l.strip().startswith("•")]
+            # Extract bullet lines (• format)
+            bullets = [l.strip() for l in raw.splitlines() if l.strip().startswith("•")]
 
-            # If model produced numbered lines instead of bullets, convert them
+            # If model used numbered format instead, convert to bullets
             if len(bullets) < 2:
-                converted = _re_s.sub(r'^\d+\.\s+', '• ', raw_with_first, flags=_re_s.MULTILINE)
+                converted = _re_s.sub(r'^\d+\.\s+', '• ', raw, flags=_re_s.MULTILINE)
                 bullets = [l.strip() for l in converted.splitlines() if l.strip().startswith("•")]
 
             # Extend from sentence splits if still short
@@ -1188,8 +1226,7 @@ class EnhancedAyurvedicRAG:
                     f"• Drinking ginger tea daily improves digestion, relieves nausea, and kindles digestive fire Agni.\n"
                     f"• Ginger balances Vata and Kapha doshas and builds immunity against colds and respiratory infections.\n"
                     f"• Take half teaspoon ginger powder with honey or add fresh ginger slices to warm water daily.\n\n"
-                    f"Now write 4 bullet point summary about: {topic_hint}\n\n"
-                    f"•"
+                    f"Now write 4 bullet point summary about: {topic_hint}"
                 )
             }
         ]
@@ -1226,7 +1263,9 @@ class EnhancedAyurvedicRAG:
             )
             raw_answer = self._clean_garbled_text(raw_answer)
 
-            raw_answer_clean = _re.sub(r'^[\s•\-\*]+', '', raw_answer).strip()
+            # Strip ALL leading non-alpha characters (bullets, dashes, dots) to get
+            # clean text, then prefix with a single proper bullet.
+            raw_answer_clean = _re.sub(r'^[\s•\-\*\.\,\:\;]+', '', raw_answer).strip()
             raw_combined = ("• " + raw_answer_clean).strip()
 
             def _clip_bullet(b: str) -> str:
@@ -1320,7 +1359,13 @@ class EnhancedAyurvedicRAG:
             is_personalized = True
 
         # Detect dosha and generate personalized tips (always, regardless of user profile)
-        detected_dosha = self._detect_dosha_from_question(question, base_answer)
+        # When the query is about a specific herb, skip dosha detection and use 'General'
+        # so tips stay on-topic for the herb rather than being dosha-specific (e.g. cooling
+        # Pitta tips would be wrong for a warming herb like cinnamon or ginger).
+        if primary_topic:
+            detected_dosha = 'General'
+        else:
+            detected_dosha = self._detect_dosha_from_question(question, base_answer)
         personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha)
         print(f"🧬 Detected dosha: {detected_dosha}")
         
@@ -1380,6 +1425,9 @@ class EnhancedAyurvedicRAG:
                 translated_nonbullets = []
                 for nl in nonbullet_lines:
                     txt = nl.strip()
+                    txt = _re2.sub(r'^[\.\,\:\;\s]+', '', txt).strip()
+                    if not txt or len(txt) < 8:
+                        continue
                     txt = self._simplify_for_translation(txt)
                     if not txt.endswith(('.', '!', '?', ':')):
                         txt += '.'
@@ -1395,9 +1443,14 @@ class EnhancedAyurvedicRAG:
                     translated_bullets = []
                     for bl in bullet_lines:
                         content = _re2.sub(r'^•\s*', '', bl).strip()
+                        # Strip any leading punctuation (dots, commas) before translation
+                        content = _re2.sub(r'^[\.\,\:\;\s]+', '', content).strip()
+                        if not content or len(content) < 10:
+                            translated_bullets.append(bl)
+                            continue
                         # Simplify Sanskrit compound terms before sending to Google Translate
                         content = self._simplify_for_translation(content)
-                        content = _re2.sub(r'^•\s*', '', content).strip()  # strip bullet added by simplify
+                        content = _re2.sub(r'^[•\.\,\s]+', '', content).strip()
                         # Ensure sentence ends with period for cleaner translation
                         if content and not content.endswith(('.', '!', '?')):
                             content += '.'
@@ -1448,10 +1501,16 @@ class EnhancedAyurvedicRAG:
             if tip_lines:
                 translated_tips = []
                 for tl in tip_lines:
+                    # Strip bullet prefix AND any leading punctuation (e.g. '. ' left
+                    # by the prompt-trailing-bullet trick in _generate_personalized_tips)
                     content = _re3.sub(r'^•\s*', '', tl).strip()
+                    content = _re3.sub(r'^[\.\,\:\;\s]+', '', content).strip()
+                    if not content or len(content) < 10:
+                        translated_tips.append(tl)
+                        continue
                     # Simplify Sanskrit compounds before translation
                     content = self._simplify_for_translation(content)
-                    content = _re3.sub(r'^•\s*', '', content).strip()
+                    content = _re3.sub(r'^[•\.\,\s]+', '', content).strip()
                     if content and not content.endswith(('.', '!', '?')):
                         content += '.'
                     try:
