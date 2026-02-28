@@ -1483,79 +1483,38 @@ class EnhancedAyurvedicRAG:
         display_answer = final_answer  # Default: English version
         
         if self.enable_translation and self.translator and detected_language == 'si':
-            # Translate the entire final_answer as one block.
-            # Single-block is more reliable than per-line because:
-            #   1. Only 1 API call (per-line made 6+ calls that could each time out)
-            #   2. Full context gives better, more natural Sinhala output
-            #   3. Much simpler code with fewer failure modes
-            print("🔄 Translating answer to Sinhala (single-block)...")
+            # Translate the full English answer to Sinhala as a single block.
+            # Use raw Google Translate output directly — no post-processing — so
+            # nothing gets accidentally stripped.
+            print("🔄 Translating answer to Sinhala...")
             try:
                 import re as _re_si_check
-                _simplified = self._simplify_for_translation(final_answer)
-                _block_si = self.translator.translate_en_to_si(_simplified)
-                _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si or ''))
-                if _block_si and _si_char_count >= 10:
-                    _cleaned = self._cleanup_translated_answer(_block_si)
-                    # If cleanup stripped too much, fall back to raw translation
-                    display_answer = _cleaned if (_cleaned and len(_cleaned.strip()) >= 20) else _block_si
-                    print(f"✓ Translation complete ({_si_char_count} Sinhala chars): {display_answer[:80]}...")
-                else:
-                    print(f"⚠️  Translation returned too few Sinhala chars ({_si_char_count}) — keeping English")
+                _block_si = self.translator.translate_en_to_si(final_answer)
+                if _block_si and _block_si.strip():
+                    _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si))
+                    if _si_char_count >= 5:
+                        display_answer = _block_si.strip()
+                        print(f"✓ Translation complete ({_si_char_count} Sinhala chars)")
+                    else:
+                        print("⚠️  Translation returned mostly English — keeping English")
             except Exception as _bte:
-                print(f"⚠️  Block translation failed: {_bte}")
+                print(f"⚠️  Translation failed: {_bte}")
 
-        # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
+        # Translate personalized tips to Sinhala — single block, raw output
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
-            print("🔄 Translating personalized tips to Sinhala (bullet-by-bullet)...")
-            import re as _re3
-            tip_lines = [l for l in personalized_tips.splitlines() if l.strip().startswith('•')]
-            if tip_lines:
-                translated_tips = []
-                for tl in tip_lines:
-                    # Strip bullet prefix AND any leading punctuation (e.g. '. ' left
-                    # by the prompt-trailing-bullet trick in _generate_personalized_tips)
-                    content = _re3.sub(r'^•\s*', '', tl).strip()
-                    content = _re3.sub(r'^[\.\,\:\;\s]+', '', content).strip()
-                    if not content or len(content) < 10:
-                        continue  # skip garbage/empty tips — don't show English fallback
-                    # Simplify Sanskrit compounds before translation
-                    content = self._simplify_for_translation(content)
-                    content = _re3.sub(r'^[•\.\,\s]+', '', content).strip()
-                    if content and not content.endswith(('.', '!', '?')):
-                        content += '.'
-                    try:
-                        si_tip = self.translator.translate_en_to_si(content)
-                        si_tip_clean = self._cleanup_translated_answer(si_tip).strip()
-                        si_tip_clean = _re3.sub(r'^[-•]\s*', '', si_tip_clean).strip()
-                        if si_tip_clean and len(si_tip_clean) >= 5:
-                            translated_tips.append(f'• {si_tip_clean}')
-                    except Exception:
-                        pass  # skip this tip on translation error — don't show English fallback
-                # Safety net: if fewer than 2 tips translated cleanly, retry all as one block
-                import re as _re_si_tips
-                if len(translated_tips) < 2 and tip_lines:
-                    try:
-                        _all_tips_en = '\n'.join(
-                            _re_si_tips.sub(r'^•\s*', '', l).strip() for l in tip_lines
-                        )
-                        _block_tips_si = self.translator.translate_en_to_si(
-                            self._simplify_for_translation(_all_tips_en)
-                        )
-                        _si_tip_count = len(_re_si_tips.findall(r'[\u0D80-\u0DFF]', _block_tips_si or ''))
-                        if _block_tips_si and _si_tip_count >= 5:
-                            # Wrap each sentence in the block as a bullet
-                            _tip_sentences = [s.strip() for s in
-                                              _re_si_tips.split(r'(?<=[.!?])\s+', _block_tips_si)
-                                              if len(s.strip()) > 8]
-                            if _tip_sentences:
-                                translated_tips = [f'• {s}' for s in _tip_sentences[:4]]
-                                print(f"✓ Block tip translation fallback: {len(translated_tips)} tips")
-                    except Exception as _tte:
-                        print(f"⚠️  Block tip translation failed: {_tte}")
-                if translated_tips:
-                    personalized_tips = '\n'.join(translated_tips)
-                else:
-                    print("⚠️  Tips translation failed, keeping English")
+            print("🔄 Translating tips to Sinhala...")
+            try:
+                import re as _re3
+                _tips_si = self.translator.translate_en_to_si(personalized_tips)
+                if _tips_si and _tips_si.strip():
+                    _si_tip_chars = len(_re3.findall(r'[\u0D80-\u0DFF]', _tips_si))
+                    if _si_tip_chars >= 5:
+                        personalized_tips = _tips_si.strip()
+                        print(f"✓ Tips translated ({_si_tip_chars} Sinhala chars)")
+                    else:
+                        print("⚠️  Tips translation returned mostly English — keeping English")
+            except Exception as _tte:
+                print(f"⚠️  Tips translation failed: {_tte}")
 
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
