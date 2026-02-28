@@ -765,6 +765,17 @@ class EnhancedAyurvedicRAG:
 
             tips = '\n'.join(tip_bullets)
 
+            # Quality gate: discard tips where garbled-word removal left only
+            # connectives/stopwords (e.g. "as & but 't ,, of at .").
+            # Require at least 5 substantive words (≥4 chars) per tip.
+            import re as _re_q
+            def _has_enough_content(tip: str) -> bool:
+                words = _re_q.findall(r'\b[a-zA-Z]{4,}\b', tip)
+                return len(words) >= 5
+
+            tip_bullets = [t for t in tip_bullets if _has_enough_content(t)]
+            tips = '\n'.join(tip_bullets)
+
             print(f"✓ Tips generated: {tips[:100]}...")
             return tips
         except Exception as e:
@@ -1194,15 +1205,26 @@ class EnhancedAyurvedicRAG:
         # causes/benefits, treatments/herbs, lifestyle advice, and a key fact.
         context_summary = context_text[:2500]
         topic_hint = question[:80].strip()
-        # Hard-pin constraint injected when we know the exact herb/topic from Singlish.
-        # Without this, the LLM drifts to summarise whatever herbs appear in the FAISS context
-        # rather than answering about the herb the user actually asked about.
-        topic_pin = (
-            f"⚠️  MANDATORY TOPIC: The patient specifically asked about '{primary_topic}'.\n"
-            f"Every bullet point MUST be exclusively about {primary_topic}.\n"
-            f"Do NOT mention Amalaki, Triphala, Shilajit, Ashwagandha, or any other herb "
-            f"unless it is directly combined with or compared to {primary_topic}.\n\n"
-        ) if primary_topic else ""
+        # Hard-pin constraint: list EVERY common herb except the queried one as forbidden.
+        # This stops the LLM from writing about turmeric inside a cinnamon answer, etc.
+        if primary_topic:
+            _ALL_HERBS = {
+                'ginger', 'turmeric', 'cinnamon', 'neem', 'tulsi', 'ashwagandha',
+                'triphala', 'amla', 'amalaki', 'brahmi', 'ghee', 'sesame', 'cardamom',
+                'cumin', 'coriander', 'fennel', 'licorice', 'pepper', 'black pepper',
+                'garlic', 'fenugreek', 'aloe', 'coconut', 'sandalwood', 'shatavari',
+                'guduchi', 'shilajit', 'pippali', 'haritaki', 'bibhitaki', 'triphala',
+                'bala', 'vidanga', 'vacha', 'musta',
+            }
+            _forbidden = sorted(_ALL_HERBS - {primary_topic.lower()})
+            topic_pin = (
+                f"⚠️  MANDATORY: The patient ONLY asked about '{primary_topic}'.\n"
+                f"Every bullet MUST be exclusively about {primary_topic}.\n"
+                f"FORBIDDEN herbs — do NOT mention any of these: "
+                f"{', '.join(_forbidden)}.\n\n"
+            )
+        else:
+            topic_pin = ""
         messages = [
             {
                 "role": "user",
@@ -1396,8 +1418,10 @@ class EnhancedAyurvedicRAG:
             formatted_citations.append(citation)
         
         # === ADD TERM CLARIFICATION for romanized Singlish ===
-        # Skip for structured answers — the herb name is already in the section heading.
-        if detected_language == 'si' and is_romanized and not is_structured:
+        # Skip when primary_topic is known — _reconstruct_answer_for_display already
+        # names the herb in the intro sentence, adding another heading is redundant
+        # and clutters the translation pipeline.
+        if detected_language == 'si' and is_romanized and not is_structured and not primary_topic:
             print("📝 Adding term clarification for romanized Singlish...")
             final_answer = self._add_term_clarification(
                 answer=final_answer,
@@ -1492,6 +1516,56 @@ class EnhancedAyurvedicRAG:
                     if not display_answer or len(display_answer.strip()) < 20:
                         display_answer = final_answer
                 print(f"✓ Translation complete: {display_answer[:100]}...")
+
+            # ── Safety net: if display_answer has almost no Sinhala chars, the
+            # per-bullet/per-line translations all silently fell back to English
+            # (network timeouts, short content, etc.).  Retry as a single block.
+            import re as _re_si_check
+            _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', display_answer))
+            if _si_char_count < 10:
+                print("⚠️  display_answer has few Sinhala chars — retrying as single-block translation...")
+                try:
+                    # Translate only the bullet content lines (without intro/closing)
+                    # to keep the result compact and clean.
+                    _bullet_only = '\n'.join(
+                        l for l in final_answer.splitlines() if l.strip().startswith('•')
+                    )
+                    _to_translate = _bullet_only if _bullet_only else final_answer
+                    _to_translate = self._simplify_for_translation(_to_translate)
+                    _block_si = self.translator.translate_en_to_si(_to_translate)
+                    if _block_si and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si)) >= 10:
+                        # Wrap translated block with Sinhala intro + closing
+                        _intro_en  = next((l.strip() for l in final_answer.splitlines()
+                                           if l.strip() and not l.strip().startswith('•')), '')
+                        _closing_en = [l.strip() for l in final_answer.splitlines()
+                                       if l.strip() and not l.strip().startswith('•')]
+                        _closing_en = _closing_en[-1] if len(_closing_en) > 1 else ''
+                        _parts = []
+                        if _intro_en:
+                            try:
+                                _si_intro = self.translator.translate_en_to_si(
+                                    self._simplify_for_translation(_intro_en)
+                                )
+                                if _si_intro and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _si_intro)) >= 3:
+                                    _parts.append(_si_intro)
+                            except Exception:
+                                pass
+                        _parts.append(_block_si)
+                        if _closing_en:
+                            try:
+                                _si_closing = self.translator.translate_en_to_si(
+                                    self._simplify_for_translation(_closing_en)
+                                )
+                                if _si_closing and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _si_closing)) >= 3:
+                                    _parts.append(_si_closing)
+                            except Exception:
+                                pass
+                        display_answer = '\n'.join(_parts)
+                        print(f"✓ Block translation fallback succeeded: {display_answer[:100]}...")
+                    else:
+                        print("⚠️  Block translation also returned no Sinhala — keeping English")
+                except Exception as _bte:
+                    print(f"⚠️  Block translation failed: {_bte}")
 
         # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
