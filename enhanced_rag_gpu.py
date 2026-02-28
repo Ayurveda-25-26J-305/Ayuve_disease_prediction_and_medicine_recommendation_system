@@ -733,6 +733,105 @@ class EnhancedAyurvedicRAG:
             print(f"⚠️  Tip generation failed: {e}")
             return ""
 
+    def _reconstruct_answer_for_display(
+        self, base_answer: str, question: str, primary_topic: str = None
+    ) -> str:
+        """
+        Post-process the raw generated bullets into a meaningful, human-readable answer.
+
+        Takes the 4 raw bullets from the LLM and wraps them with:
+          1. A direct one-sentence intro that matches exactly what the user asked.
+          2. The bullets, each slightly restructured to start with a strong opener.
+          3. A one-line closing "key takeaway" sentence.
+
+        This runs entirely in Python (no second LLM call) and works for both
+        English and Singlish queries — for Sinhala the intro/closing get translated
+        along with the bullets in the translation block downstream.
+        """
+        import re as _re_rc
+
+        bullets = [l.strip() for l in base_answer.splitlines() if l.strip().startswith('•')]
+        if not bullets:
+            return base_answer  # nothing to reconstruct
+
+        q = question.lower().strip().rstrip('?!.')
+        herb = (primary_topic or '').strip().capitalize()
+
+        # ── Detect question intent ────────────────────────────────────────────
+        _benefit_kw  = {'benefit', 'good for', 'help', 'use', 'what does', 'what is',
+                        'properties', 'guna', 'wala guna', 'uses', 'health', 'effect'}
+        _howto_kw    = {'how to', 'howto', 'prepare', 'make', 'consume', 'drink',
+                        'apply', 'method', 'dosage', 'karanna', 'bonawa'}
+        _treat_kw    = {'treat', 'cure', 'remedy', 'medicine', 'relief', 'reduce',
+                        'heal', 'fix', 'solve', 'manage', 'symptoms', 'disease'}
+        _dosha_kw    = {'dosha', 'vata', 'pitta', 'kapha', 'prakriti', 'balance'}
+
+        intent = 'general'
+        for kw in _benefit_kw:
+            if kw in q:
+                intent = 'benefit'
+                break
+        for kw in _howto_kw:
+            if kw in q:
+                intent = 'howto'
+                break
+        for kw in _treat_kw:
+            if kw in q:
+                intent = 'treat'
+                break
+        for kw in _dosha_kw:
+            if kw in q:
+                intent = 'dosha'
+                break
+
+        # ── Build intro sentence ──────────────────────────────────────────────
+        if intent == 'benefit':
+            if herb:
+                intro = (f"{herb} is a highly valued Ayurvedic herb known for its powerful "
+                         f"healing properties. Here is what Ayurveda recommends:")
+            else:
+                intro = "Ayurveda provides the following health insights for your question:"
+
+        elif intent == 'howto':
+            if herb:
+                intro = (f"{herb} can be prepared and used in several traditional Ayurvedic ways. "
+                         f"Here are the key guidelines:")
+            else:
+                intro = "Here is how Ayurveda traditionally prepares and uses this remedy:"
+
+        elif intent == 'treat':
+            if herb:
+                intro = (f"In Ayurveda, {herb} is often recommended as a natural remedy. "
+                         f"Here is how it helps:")
+            else:
+                intro = ("Ayurveda offers the following natural remedies and guidance "
+                         "for managing this condition:")
+
+        elif intent == 'dosha':
+            if herb:
+                intro = (f"{herb} has a direct effect on the body's doshas according to Ayurveda. "
+                         f"Key points:")
+            else:
+                intro = "Here is how Ayurveda explains the dosha relationship for your question:"
+
+        else:  # general
+            if herb:
+                intro = f"Here is what Ayurvedic knowledge says about {herb}:"
+            else:
+                intro = "Based on Ayurvedic knowledge, here are the key points:"
+
+        # ── Build closing takeaway ────────────────────────────────────────────
+        if herb:
+            closing = (f"Always use {herb} consistently as part of a balanced Ayurvedic "
+                       f"lifestyle for best results.")
+        else:
+            closing = ("Follow these Ayurvedic guidelines consistently for safe and "
+                       "effective results.")
+
+        # ── Assemble final answer ─────────────────────────────────────────────
+        bullet_block = '\n'.join(bullets)
+        return f"{intro}\n{bullet_block}\n{closing}"
+
     def _generate_structured_herb_answer(self, herb_name: str, question: str, context_summary: str) -> str:
         """
         Generate 4 rich bullet-point herb guide using a ginger few-shot example.
@@ -1183,6 +1282,18 @@ class EnhancedAyurvedicRAG:
             if not is_structured:
                 _raw = locals().get('raw_answer', '')
                 print(f"   Raw answer: {_raw[:300] if _raw else '[NONE]'}...")
+
+        # ── RECONSTRUCT: wrap raw bullets into a meaningful, user-friendly answer ──
+        # Adds a context-aware intro sentence matched to the question intent (benefit /
+        # how-to / treatment / dosha) and a closing takeaway sentence.
+        # This runs in pure Python — no second LLM call needed.
+        if base_answer and len(base_answer.strip()) >= 10:
+            base_answer = self._reconstruct_answer_for_display(
+                base_answer=base_answer,
+                question=question,
+                primary_topic=primary_topic
+            )
+            print(f"   Reconstructed answer preview: {base_answer[:200]}...")
         
         # Validate
         validation_result = None
@@ -1257,10 +1368,29 @@ class EnhancedAyurvedicRAG:
             # Both structured (• bullet guide) and flat bullets use the same bullet-by-bullet
             # path — structured answers now always output • bullets, not section headings.
             if True:
-                # Flat bullets: translate each bullet individually
-                print("🔄 Translating answer to Sinhala (bullet-by-bullet)...")
+                # Full answer: translate line by line — intro/closing (plain text) and
+                # bullet lines are handled separately for maximum translation quality.
+                print("🔄 Translating answer to Sinhala (line-by-line)...")
                 import re as _re2
-                bullet_lines = [l for l in final_answer.splitlines() if l.strip().startswith('•')]
+                all_lines = [l for l in final_answer.splitlines() if l.strip()]
+                bullet_lines   = [l for l in all_lines if l.strip().startswith('•')]
+                nonbullet_lines = [l for l in all_lines if not l.strip().startswith('•')]
+
+                # ── Translate non-bullet lines (intro + closing) ──
+                translated_nonbullets = []
+                for nl in nonbullet_lines:
+                    txt = nl.strip()
+                    txt = self._simplify_for_translation(txt)
+                    if not txt.endswith(('.', '!', '?', ':')):
+                        txt += '.'
+                    try:
+                        si_nl = self.translator.translate_en_to_si(txt)
+                        si_nl = self._cleanup_translated_answer(si_nl).strip()
+                        if si_nl and len(si_nl) >= 5:
+                            translated_nonbullets.append(si_nl)
+                    except Exception:
+                        translated_nonbullets.append(nl.strip())  # English fallback
+
                 if bullet_lines:
                     translated_bullets = []
                     for bl in bullet_lines:
@@ -1282,8 +1412,23 @@ class EnhancedAyurvedicRAG:
                             print(f"⚠️  Bullet translation failed: {_te}")
                             translated_bullets.append(bl)  # keep English bullet as fallback
                     if translated_bullets:
-                        display_answer = '\n'.join(translated_bullets)
-                        print(f"✓ Translated {len(translated_bullets)} bullets to Sinhala")
+                        # Assemble: intro + bullets + closing
+                        # _reconstruct_answer_for_display always produces exactly:
+                        #   nonbullet line 0 = intro sentence
+                        #   nonbullet line -1 = closing sentence  (same if only 1)
+                        if len(translated_nonbullets) >= 2:
+                            intro_si   = [translated_nonbullets[0]]
+                            closing_si = [translated_nonbullets[-1]]
+                        elif len(translated_nonbullets) == 1:
+                            intro_si   = [translated_nonbullets[0]]
+                            closing_si = []
+                        else:
+                            intro_si   = []
+                            closing_si = []
+                        parts = intro_si + translated_bullets + closing_si
+                        display_answer = '\n'.join(parts)
+                        print(f"✓ Translated {len(translated_bullets)} bullets + "
+                              f"{len(translated_nonbullets)} intro/closing lines to Sinhala")
                     else:
                         display_answer = final_answer
                 else:
