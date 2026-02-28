@@ -394,9 +394,32 @@ class EnhancedAyurvedicRAG:
         
         return '\n'.join(unique_lines).strip()
     
+    # Sanskrit/Ayurvedic compound words that Google Translate garbles badly when
+    # sent into Sinhala. Replace these with simpler English equivalents.
+    _SANSKRIT_SIMPLIFY = [
+        # Compound proper nouns from texts → readable description
+        (r'\bPurisha Chaksma\b', 'colon cleansing'),
+        (r'\bPratyaya\b', 'principle'),
+        (r'\bKleshtana\b', 'toxin removal'),
+        (r'\bLekhana\b', 'cleansing'),
+        (r'\bAmrita Rasayana\b', 'Ayurvedic tonic'),
+        (r'\bAgni\b', 'digestive fire'),
+        (r'\bAma\b', 'toxins'),
+        (r'\bOjas\b', 'vital energy'),
+        (r'\bPrana\b', 'life force'),
+        (r'\bDhatus?\b', 'body tissues'),
+        (r'\bDosha\b', 'body constitution'),
+        (r'\bVata\b', 'Vata'),
+        (r'\bPitta\b', 'Pitta'),
+        (r'\bKapha\b', 'Kapha'),
+        # Remove overly long Sanskrit compound terms that don't translate
+        (r'\b[A-Z][a-z]+(dh?atu|rasa|guna|karma|chikitsa|drav)?[A-Z][a-z]+\b', ''),
+    ]
+
     def _simplify_for_translation(self, english_text: str) -> str:
         """
         Simplify English text before translation to improve Sinhala quality.
+        - Replace Sanskrit compound terms with plain English equivalents
         - Break down complex sentences
         - Remove excessive technical jargon
         - Make sentences more translation-friendly
@@ -405,6 +428,17 @@ class EnhancedAyurvedicRAG:
         
         if not english_text or not english_text.strip():
             return ""
+
+        # Replace known Sanskrit compounds with readable English
+        for pattern, replacement in self._SANSKRIT_SIMPLIFY:
+            english_text = re.sub(pattern, replacement, english_text, flags=re.IGNORECASE)
+
+        # Remove leftover CamelCase compound Sanskrit terms that weren't caught
+        # e.g. 'PachakapittamLekhana', 'KleshtnaKarma' — keep first capital word only
+        english_text = re.sub(r'\b([A-Z][a-z]+)([A-Z][a-z]+){2,}\b', r'\1', english_text)
+
+        # Clean up doubled spaces from removals
+        english_text = re.sub(r'  +', ' ', english_text).strip()
         
         # Split into lines (bullets)
         lines = english_text.split('\n')
@@ -415,7 +449,10 @@ class EnhancedAyurvedicRAG:
                 continue
             
             # Extract bullet marker and content
-            if line.strip().startswith('-'):
+            if line.strip().startswith('•'):
+                bullet = '• '
+                content = re.sub(r'^•\s*', '', line.strip())
+            elif line.strip().startswith('-'):
                 bullet = '- '
                 content = line.strip()[2:].strip()
             else:
@@ -720,6 +757,136 @@ class EnhancedAyurvedicRAG:
             print(f"⚠️  Tip generation failed: {e}")
             return ""
 
+    def _generate_structured_herb_answer(self, herb_name: str, question: str, context_summary: str) -> str:
+        """
+        Generate a structured multi-section herb answer (like a human doctor would write).
+        Produces: Benefits (numbered) + How to use + Ayurvedic note + Caution.
+        Used for Singlish herb queries where we know the exact herb requested.
+        """
+        print(f"🌿 Generating structured answer for herb: '{herb_name}'")
+        try:
+            import re as _re_s
+            prompt = (
+                f"You are a knowledgeable Ayurvedic doctor.\n"
+                f"Patient asked: \"{question}\"\n"
+                f"Herb: {herb_name}\n\n"
+                f"Ayurvedic context (use for grounding):\n{context_summary}\n\n"
+                f"Write a clear, structured guide about {herb_name} with these EXACT sections:\n\n"
+                f"**Benefits of {herb_name}:**\n"
+                f"1. [benefit 1 — 10-15 words]\n"
+                f"2. [benefit 2 — 10-15 words]\n"
+                f"3. [benefit 3 — 10-15 words]\n"
+                f"4. [benefit 4 — 10-15 words]\n\n"
+                f"**How to use:**\n"
+                f"• [practical usage 1 — how patient should take it]\n"
+                f"• [practical usage 2]\n\n"
+                f"**Ayurvedic note:**\n"
+                f"• [which doshas it balances, and Agni / digestive benefit — 15 words]\n\n"
+                f"**Caution:**\n"
+                f"• [1-2 sentences on dosage limit or side effects for safety]\n\n"
+                f"RULES:\n"
+                f"• EVERY item must be about {herb_name} specifically. Not other herbs.\n"
+                f"• No author names, no book titles, no source labels.\n"
+                f"• Plain English only — no unreadable Sanskrit compound words.\n"
+                f"• Be specific, practical, and factual.\n\n"
+                f"**Benefits of {herb_name}:**"
+            )
+            messages = [{"role": "user", "content": prompt}]
+            raw = self.llm.generate_from_messages(
+                messages, max_new_tokens=420, min_new_tokens=180, temperature=0.3
+            )
+            raw = self._clean_garbled_text(raw)
+            # Reconstruct full output (prompt ends with the first section heading)
+            result = (f"**Benefits of {herb_name}:**\n" + raw.lstrip()).strip()
+            print(f"   Structured answer length: {len(result)} chars")
+            return result
+        except Exception as e:
+            print(f"⚠️  Structured herb generation failed: {e}")
+            return ""
+
+    def _translate_structured_to_sinhala(self, structured_text: str) -> str:
+        """
+        Translate a structured herb answer (with **Section:** headers and numbered/bullet items)
+        to Sinhala by translating each unit (heading + individual items) separately.
+        This produces much cleaner Sinhala than translating the whole block at once.
+        """
+        if not self.translator:
+            return structured_text
+
+        import re as _re_t
+
+        # Map English section headings to Sinhala
+        HEADING_MAP = {
+            r'\*\*Benefits of (.+?):\*\*': lambda m: f'**{m.group(1)} ගුණ:**',
+            r'\*\*How to use:\*\*':         '**භාවිතා කිරීම:**',
+            r'\*\*Ayurvedic note:\*\*':      '**ආයුර්වේද සටහන:**',
+            r'\*\*Caution:\*\*':             '**සැලකිල්ල:**',
+        }
+
+        lines = structured_text.split('\n')
+        out = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                out.append('')
+                continue
+
+            # Handle section headings
+            heading_replaced = False
+            for pattern, replacement in HEADING_MAP.items():
+                m = _re_t.match(pattern, stripped)
+                if m:
+                    if callable(replacement):
+                        out.append(replacement(m))
+                    else:
+                        out.append(replacement)
+                    heading_replaced = True
+                    break
+            if heading_replaced:
+                continue
+
+            # Handle numbered items: "1. Some benefit text"
+            nm = _re_t.match(r'^(\d+)\.\s+(.+)$', stripped)
+            if nm:
+                num = nm.group(1)
+                text = nm.group(2).strip()
+                try:
+                    text = self._simplify_for_translation(text)
+                    text = _re_t.sub(r'^[•\-]?\s*', '', text).strip()
+                    si = self.translator.translate_en_to_si(text)
+                    si = self._cleanup_translated_answer(si).strip()
+                    si = _re_t.sub(r'^[-•]\s*', '', si).strip()
+                    out.append(f'{num}. {si}' if si else f'{num}. {text}')
+                except Exception:
+                    out.append(line)
+                continue
+
+            # Handle bullet items: "• Some text"
+            bm = _re_t.match(r'^[•\-]\s*(.+)$', stripped)
+            if bm:
+                text = bm.group(1).strip()
+                try:
+                    text = self._simplify_for_translation(text)
+                    text = _re_t.sub(r'^[•\-]?\s*', '', text).strip()
+                    si = self.translator.translate_en_to_si(text)
+                    si = self._cleanup_translated_answer(si).strip()
+                    si = _re_t.sub(r'^[-•]\s*', '', si).strip()
+                    out.append(f'• {si}' if si else f'• {text}')
+                except Exception:
+                    out.append(line)
+                continue
+
+            # Plain text line — translate directly
+            try:
+                txt = self._simplify_for_translation(stripped)
+                si = self.translator.translate_en_to_si(txt)
+                si = self._cleanup_translated_answer(si).strip()
+                out.append(si if si else stripped)
+            except Exception:
+                out.append(line)
+
+        return '\n'.join(out)
+
     def _expand_query_with_ayurvedic_terms(self, query: str) -> str:
         """
         Enrich the English search query with Ayurvedic synonyms so FAISS retrieves
@@ -769,9 +936,37 @@ class EnhancedAyurvedicRAG:
                 question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
                 print(f"🔄 Translated question: {question[:100]}...")
         
-        # Expand query with Ayurvedic synonyms before searching so FAISS finds
-        # the right passages even when user phrasing differs from book vocabulary
-        search_query = self._expand_query_with_ayurvedic_terms(question)
+        # For Singlish queries, extract the primary herb/entity from the ORIGINAL romanized
+        # words (before translation). This lets us pin the LLM prompt to the exact topic
+        # even when FAISS retrieves documents about other herbs due to low-similarity guesses.
+        primary_topic = None
+        if is_romanized:
+            import re as _re_pt
+            from translation_service import SINHALA_TO_ENGLISH_DICT as _si_dict
+            # Skip grammatical / question / adjective words — only look for nouns (herbs, body parts)
+            _skip_words = {
+                'monawada', 'mokadda', 'mokada', 'kohomada', 'kawuda', 'kauda',
+                'kiyada', 'keyada', 'da', 'eka', 'wala', 'walata', 'ta', 'gen',
+                'ekka', 'nisa', 'hinda', 'monada', 'guna', 'gunas', 'honda',
+                'naraka', 'loku', 'podi', 'wadi', 'adu', 'me', 'meka', 'ara',
+                'owa', 'mata', 'mama', 'api', 'oya', 'what', 'how', 'why',
+                'karanna', 'ganna', 'bonawa', 'kannawa', 'thiyenawa',
+            }
+            for _w in original_question.lower().split():
+                _cw = _re_pt.sub(r'[^\w]', '', _w)
+                if _cw in _si_dict and _cw not in _skip_words:
+                    _eng = _si_dict[_cw]
+                    if len(_eng) > 3:  # skip single-char translations
+                        primary_topic = _eng
+                        break
+            if primary_topic:
+                print(f"🌿 Singlish primary topic pinned: '{primary_topic}'")
+
+        # Expand query. If primary_topic was extracted, prepend it so FAISS finds
+        # the most relevant passages even before the translated question words help.
+        search_query = self._expand_query_with_ayurvedic_terms(
+            (primary_topic + ' ' + question) if primary_topic else question
+        )
 
         # Retrieve documents with similarity scores (prefer book sources)
         # Note: Always search in English since database is in English
@@ -788,9 +983,18 @@ class EnhancedAyurvedicRAG:
                 doc['similarity_percentage'] = round(doc['similarity'] * 100, 1)
         
         # Prefer book sources for context, but include high-similarity QA docs too.
-        # Sort ALL retrieved docs by similarity so the most relevant content wins
-        # regardless of document type, while still keeping books at the front.
-        all_docs_sorted = sorted(retrieved_docs, key=lambda d: d.get('similarity', 0), reverse=True)
+        # For Singlish queries, boost documents that literally contain the primary herb/topic
+        # so the LLM receives on-topic context instead of generic Ayurvedic passages.
+        if primary_topic:
+            _topic_lower = primary_topic.lower()
+            def _score_with_topic_boost(d):
+                bonus = 0.20 if _topic_lower in d.get('text', '').lower() else 0.0
+                return d.get('similarity', 0) + bonus
+            all_docs_sorted = sorted(retrieved_docs, key=_score_with_topic_boost, reverse=True)
+            _topic_hits = sum(1 for d in all_docs_sorted[:5] if _topic_lower in d.get('text', '').lower())
+            print(f"📌 Re-ranked for '{primary_topic}': {_topic_hits}/5 top docs contain it")
+        else:
+            all_docs_sorted = sorted(retrieved_docs, key=lambda d: d.get('similarity', 0), reverse=True)
         # Guarantee at least 2 book docs in context if available (for citation quality)
         top_book_docs = [d for d in all_docs_sorted if d.get('type') == 'book'][:2]
         other_top_docs = [d for d in all_docs_sorted if d not in top_book_docs][:max(0, top_k - len(top_book_docs))]
@@ -810,6 +1014,15 @@ class EnhancedAyurvedicRAG:
         # causes/benefits, treatments/herbs, lifestyle advice, and a key fact.
         context_summary = context_text[:2500]
         topic_hint = question[:80].strip()
+        # Hard-pin constraint injected when we know the exact herb/topic from Singlish.
+        # Without this, the LLM drifts to summarise whatever herbs appear in the FAISS context
+        # rather than answering about the herb the user actually asked about.
+        topic_pin = (
+            f"⚠️  MANDATORY TOPIC: The patient specifically asked about '{primary_topic}'.\n"
+            f"Every bullet point MUST be exclusively about {primary_topic}.\n"
+            f"Do NOT mention Amalaki, Triphala, Shilajit, Ashwagandha, or any other herb "
+            f"unless it is directly combined with or compared to {primary_topic}.\n\n"
+        ) if primary_topic else ""
         messages = [
             {
                 "role": "user",
@@ -817,6 +1030,7 @@ class EnhancedAyurvedicRAG:
                     f"You are a knowledgeable Ayurvedic doctor writing a clear summary for a patient.\n"
                     f"Patient question: \"{question}\"\n\n"
                     f"Ayurvedic Knowledge Sources:\n{context_summary}\n\n"
+                    f"{topic_pin}"
                     f"Task: Write a SUMMARY with EXACTLY 4 bullet points that directly answer: {topic_hint}\n\n"
                     f"STRICT RULES:\n"
                     f"• Each bullet point = 1 complete informative sentence (15–25 words).\n"
@@ -908,8 +1122,22 @@ class EnhancedAyurvedicRAG:
 
         if bullets:
             base_answer = '\n'.join(bullets)
-        
-        print(f"✅ Generation complete!")
+
+        # For Singlish herb queries: override flat bullets with a structured multi-section
+        # answer (Benefits / How to use / Ayurvedic note / Caution) — much more useful than
+        # 4 academic bullets extracted from Ayurvedic book passages.
+        is_structured = False
+        if primary_topic:
+            structured = self._generate_structured_herb_answer(
+                herb_name=primary_topic,
+                question=question,
+                context_summary=context_text[:1500]
+            )
+            if structured and len(structured.strip()) > 60:
+                base_answer = structured
+                is_structured = True
+
+        print(f"✅ Generation complete! ({'structured' if is_structured else 'flat bullets'})")
         print(f"   Answer length: {len(base_answer)} chars")
         print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
         
@@ -987,40 +1215,51 @@ class EnhancedAyurvedicRAG:
         
         if self.enable_translation and self.translator and detected_language == 'si':
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
-            # Translate each bullet individually for better translation quality
-            print("🔄 Translating answer to Sinhala (bullet-by-bullet)...")
-            import re as _re2
-            bullet_lines = [l for l in final_answer.splitlines() if l.strip().startswith('•')]
-            if bullet_lines:
-                translated_bullets = []
-                for bl in bullet_lines:
-                    content = _re2.sub(r'^•\s*', '', bl).strip()
-                    # Ensure sentence ends with period for cleaner translation
-                    if content and not content.endswith(('.', '!', '?')):
-                        content += '.'
-                    try:
-                        si_content = self.translator.translate_en_to_si(content)
-                        si_clean = self._cleanup_translated_answer(si_content).strip()
-                        # Strip any bullet the cleanup may have added
-                        si_clean = _re2.sub(r'^[-•]\s*', '', si_clean).strip()
-                        if si_clean and len(si_clean) >= 5:
-                            translated_bullets.append(f'• {si_clean}')
-                    except Exception as _te:
-                        print(f"⚠️  Bullet translation failed: {_te}")
-                        translated_bullets.append(bl)  # keep English bullet as fallback
-                if translated_bullets:
-                    display_answer = '\n'.join(translated_bullets)
-                    print(f"✓ Translated {len(translated_bullets)} bullets to Sinhala")
-                else:
-                    display_answer = final_answer
-            else:
-                # No bullets — translate as single block
-                simplified_english = self._simplify_for_translation(final_answer)
-                raw_translation = self.translator.translate_en_to_si(simplified_english)
-                display_answer = self._cleanup_translated_answer(raw_translation)
+            if is_structured:
+                # Structured herb answer: translate section-by-section
+                print("🔄 Translating structured herb answer to Sinhala...")
+                display_answer = self._translate_structured_to_sinhala(final_answer)
                 if not display_answer or len(display_answer.strip()) < 20:
                     display_answer = final_answer
-            print(f"✓ Translation complete: {display_answer[:100]}...")
+                print(f"✓ Structured translation complete: {display_answer[:100]}...")
+            else:
+                # Flat bullets: translate each bullet individually
+                print("🔄 Translating answer to Sinhala (bullet-by-bullet)...")
+                import re as _re2
+                bullet_lines = [l for l in final_answer.splitlines() if l.strip().startswith('•')]
+                if bullet_lines:
+                    translated_bullets = []
+                    for bl in bullet_lines:
+                        content = _re2.sub(r'^•\s*', '', bl).strip()
+                        # Simplify Sanskrit compound terms before sending to Google Translate
+                        content = self._simplify_for_translation(content)
+                        content = _re2.sub(r'^•\s*', '', content).strip()  # strip bullet added by simplify
+                        # Ensure sentence ends with period for cleaner translation
+                        if content and not content.endswith(('.', '!', '?')):
+                            content += '.'
+                        try:
+                            si_content = self.translator.translate_en_to_si(content)
+                            si_clean = self._cleanup_translated_answer(si_content).strip()
+                            # Strip any bullet the cleanup may have added
+                            si_clean = _re2.sub(r'^[-•]\s*', '', si_clean).strip()
+                            if si_clean and len(si_clean) >= 5:
+                                translated_bullets.append(f'• {si_clean}')
+                        except Exception as _te:
+                            print(f"⚠️  Bullet translation failed: {_te}")
+                            translated_bullets.append(bl)  # keep English bullet as fallback
+                    if translated_bullets:
+                        display_answer = '\n'.join(translated_bullets)
+                        print(f"✓ Translated {len(translated_bullets)} bullets to Sinhala")
+                    else:
+                        display_answer = final_answer
+                else:
+                    # No bullets — translate as single block
+                    simplified_english = self._simplify_for_translation(final_answer)
+                    raw_translation = self.translator.translate_en_to_si(simplified_english)
+                    display_answer = self._cleanup_translated_answer(raw_translation)
+                    if not display_answer or len(display_answer.strip()) < 20:
+                        display_answer = final_answer
+                print(f"✓ Translation complete: {display_answer[:100]}...")
 
         # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
@@ -1031,6 +1270,9 @@ class EnhancedAyurvedicRAG:
                 translated_tips = []
                 for tl in tip_lines:
                     content = _re3.sub(r'^•\s*', '', tl).strip()
+                    # Simplify Sanskrit compounds before translation
+                    content = self._simplify_for_translation(content)
+                    content = _re3.sub(r'^•\s*', '', content).strip()
                     if content and not content.endswith(('.', '!', '?')):
                         content += '.'
                     try:
