@@ -691,9 +691,11 @@ class EnhancedAyurvedicRAG:
                 "sesame oil, ghee, cardamom, cumin, coriander, fennel, guduchi, shatavari, "
                 "licorice, pippali, haritaki, bibhitaki, sandalwood, coconut oil"
             )
+            # 'General' is not a real dosha — rephrase it so the LLM gives useful tips
+            dosha_label = 'balanced (all dosha types)' if dosha == 'General' else dosha
             prompt = (
-                f"You are an Ayurvedic doctor. Patient question: \"{question}\"\nDosha: {dosha}\n\n"
-                f"Give 4 practical Ayurvedic lifestyle tips for a {dosha} type person.\n\n"
+                f"You are an Ayurvedic doctor. Patient question: \"{question}\"\nDosha: {dosha_label}\n\n"
+                f"Give 4 practical Ayurvedic lifestyle tips for a {dosha_label} type person.\n\n"
                 f"STRICT RULES:\n"
                 f"• Each tip: 1 complete sentence, 15–20 words, ending with a period.\n"
                 f"• ONLY use herbs and practices from this list: {AYURVEDIC_HERBS}\n"
@@ -708,7 +710,7 @@ class EnhancedAyurvedicRAG:
                 f"• Add a pinch of turmeric and cumin to cooked meals to balance Pitta dosha.\n"
                 f"• Avoid cold drinks and raw food which aggravate Vata and slow digestion.\n"
                 f"• Take one teaspoon of triphala powder with warm water before bed nightly.\n\n"
-                f"Now give 4 tips for {dosha} dosha about: {topic_line}\n\n"
+                f"Now give 4 tips about: {topic_line}\n\n"
                 f"•"
             )
             messages = [
@@ -1481,139 +1483,26 @@ class EnhancedAyurvedicRAG:
         display_answer = final_answer  # Default: English version
         
         if self.enable_translation and self.translator and detected_language == 'si':
-            # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
-            # Both structured (• bullet guide) and flat bullets use the same bullet-by-bullet
-            # path — structured answers now always output • bullets, not section headings.
-            if True:
-                # Full answer: translate line by line — intro/closing (plain text) and
-                # bullet lines are handled separately for maximum translation quality.
-                print("🔄 Translating answer to Sinhala (line-by-line)...")
-                import re as _re2
-                all_lines = [l for l in final_answer.splitlines() if l.strip()]
-                bullet_lines   = [l for l in all_lines if l.strip().startswith('•')]
-                nonbullet_lines = [l for l in all_lines if not l.strip().startswith('•')]
-
-                # ── Translate non-bullet lines (intro + closing) ──
-                translated_nonbullets = []
-                for nl in nonbullet_lines:
-                    txt = nl.strip()
-                    txt = _re2.sub(r'^[\.\,\:\;\s]+', '', txt).strip()
-                    if not txt or len(txt) < 8:
-                        continue
-                    txt = self._simplify_for_translation(txt)
-                    if not txt.endswith(('.', '!', '?', ':')):
-                        txt += '.'
-                    try:
-                        si_nl = self.translator.translate_en_to_si(txt)
-                        si_nl = self._cleanup_translated_answer(si_nl).strip()
-                        if si_nl and len(si_nl) >= 5:
-                            translated_nonbullets.append(si_nl)
-                    except Exception:
-                        translated_nonbullets.append(nl.strip())  # English fallback
-
-                if bullet_lines:
-                    translated_bullets = []
-                    for bl in bullet_lines:
-                        content = _re2.sub(r'^•\s*', '', bl).strip()
-                        # Strip any leading punctuation (dots, commas) before translation
-                        content = _re2.sub(r'^[\.\,\:\;\s]+', '', content).strip()
-                        if not content or len(content) < 10:
-                            translated_bullets.append(bl)
-                            continue
-                        # Simplify Sanskrit compound terms before sending to Google Translate
-                        content = self._simplify_for_translation(content)
-                        content = _re2.sub(r'^[•\.\,\s]+', '', content).strip()
-                        # Ensure sentence ends with period for cleaner translation
-                        if content and not content.endswith(('.', '!', '?')):
-                            content += '.'
-                        try:
-                            si_content = self.translator.translate_en_to_si(content)
-                            si_clean = self._cleanup_translated_answer(si_content).strip()
-                            # Strip any bullet the cleanup may have added
-                            si_clean = _re2.sub(r'^[-•]\s*', '', si_clean).strip()
-                            if si_clean and len(si_clean) >= 5:
-                                translated_bullets.append(f'• {si_clean}')
-                        except Exception as _te:
-                            print(f"⚠️  Bullet translation failed: {_te}")
-                            translated_bullets.append(bl)  # keep English bullet as fallback
-                    if translated_bullets:
-                        # Assemble: intro + bullets + closing
-                        # _reconstruct_answer_for_display always produces exactly:
-                        #   nonbullet line 0 = intro sentence
-                        #   nonbullet line -1 = closing sentence  (same if only 1)
-                        if len(translated_nonbullets) >= 2:
-                            intro_si   = [translated_nonbullets[0]]
-                            closing_si = [translated_nonbullets[-1]]
-                        elif len(translated_nonbullets) == 1:
-                            intro_si   = [translated_nonbullets[0]]
-                            closing_si = []
-                        else:
-                            intro_si   = []
-                            closing_si = []
-                        parts = intro_si + translated_bullets + closing_si
-                        display_answer = '\n'.join(parts)
-                        print(f"✓ Translated {len(translated_bullets)} bullets + "
-                              f"{len(translated_nonbullets)} intro/closing lines to Sinhala")
-                    else:
-                        display_answer = final_answer
+            # Translate the entire final_answer as one block.
+            # Single-block is more reliable than per-line because:
+            #   1. Only 1 API call (per-line made 6+ calls that could each time out)
+            #   2. Full context gives better, more natural Sinhala output
+            #   3. Much simpler code with fewer failure modes
+            print("🔄 Translating answer to Sinhala (single-block)...")
+            try:
+                import re as _re_si_check
+                _simplified = self._simplify_for_translation(final_answer)
+                _block_si = self.translator.translate_en_to_si(_simplified)
+                _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si or ''))
+                if _block_si and _si_char_count >= 10:
+                    _cleaned = self._cleanup_translated_answer(_block_si)
+                    # If cleanup stripped too much, fall back to raw translation
+                    display_answer = _cleaned if (_cleaned and len(_cleaned.strip()) >= 20) else _block_si
+                    print(f"✓ Translation complete ({_si_char_count} Sinhala chars): {display_answer[:80]}...")
                 else:
-                    # No bullets — translate as single block
-                    simplified_english = self._simplify_for_translation(final_answer)
-                    raw_translation = self.translator.translate_en_to_si(simplified_english)
-                    display_answer = self._cleanup_translated_answer(raw_translation)
-                    if not display_answer or len(display_answer.strip()) < 20:
-                        display_answer = final_answer
-                print(f"✓ Translation complete: {display_answer[:100]}...")
-
-            # ── Safety net: if display_answer has almost no Sinhala chars, the
-            # per-bullet/per-line translations all silently fell back to English
-            # (network timeouts, short content, etc.).  Retry as a single block.
-            import re as _re_si_check
-            _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', display_answer))
-            if _si_char_count < 10:
-                print("⚠️  display_answer has few Sinhala chars — retrying as single-block translation...")
-                try:
-                    # Translate only the bullet content lines (without intro/closing)
-                    # to keep the result compact and clean.
-                    _bullet_only = '\n'.join(
-                        l for l in final_answer.splitlines() if l.strip().startswith('•')
-                    )
-                    _to_translate = _bullet_only if _bullet_only else final_answer
-                    _to_translate = self._simplify_for_translation(_to_translate)
-                    _block_si = self.translator.translate_en_to_si(_to_translate)
-                    if _block_si and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si)) >= 10:
-                        # Wrap translated block with Sinhala intro + closing
-                        _intro_en  = next((l.strip() for l in final_answer.splitlines()
-                                           if l.strip() and not l.strip().startswith('•')), '')
-                        _closing_en = [l.strip() for l in final_answer.splitlines()
-                                       if l.strip() and not l.strip().startswith('•')]
-                        _closing_en = _closing_en[-1] if len(_closing_en) > 1 else ''
-                        _parts = []
-                        if _intro_en:
-                            try:
-                                _si_intro = self.translator.translate_en_to_si(
-                                    self._simplify_for_translation(_intro_en)
-                                )
-                                if _si_intro and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _si_intro)) >= 3:
-                                    _parts.append(_si_intro)
-                            except Exception:
-                                pass
-                        _parts.append(_block_si)
-                        if _closing_en:
-                            try:
-                                _si_closing = self.translator.translate_en_to_si(
-                                    self._simplify_for_translation(_closing_en)
-                                )
-                                if _si_closing and len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _si_closing)) >= 3:
-                                    _parts.append(_si_closing)
-                            except Exception:
-                                pass
-                        display_answer = '\n'.join(_parts)
-                        print(f"✓ Block translation fallback succeeded: {display_answer[:100]}...")
-                    else:
-                        print("⚠️  Block translation also returned no Sinhala — keeping English")
-                except Exception as _bte:
-                    print(f"⚠️  Block translation failed: {_bte}")
+                    print(f"⚠️  Translation returned too few Sinhala chars ({_si_char_count}) — keeping English")
+            except Exception as _bte:
+                print(f"⚠️  Block translation failed: {_bte}")
 
         # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
@@ -1628,8 +1517,7 @@ class EnhancedAyurvedicRAG:
                     content = _re3.sub(r'^•\s*', '', tl).strip()
                     content = _re3.sub(r'^[\.\,\:\;\s]+', '', content).strip()
                     if not content or len(content) < 10:
-                        translated_tips.append(tl)
-                        continue
+                        continue  # skip garbage/empty tips — don't show English fallback
                     # Simplify Sanskrit compounds before translation
                     content = self._simplify_for_translation(content)
                     content = _re3.sub(r'^[•\.\,\s]+', '', content).strip()
@@ -1642,7 +1530,28 @@ class EnhancedAyurvedicRAG:
                         if si_tip_clean and len(si_tip_clean) >= 5:
                             translated_tips.append(f'• {si_tip_clean}')
                     except Exception:
-                        translated_tips.append(tl)
+                        pass  # skip this tip on translation error — don't show English fallback
+                # Safety net: if fewer than 2 tips translated cleanly, retry all as one block
+                import re as _re_si_tips
+                if len(translated_tips) < 2 and tip_lines:
+                    try:
+                        _all_tips_en = '\n'.join(
+                            _re_si_tips.sub(r'^•\s*', '', l).strip() for l in tip_lines
+                        )
+                        _block_tips_si = self.translator.translate_en_to_si(
+                            self._simplify_for_translation(_all_tips_en)
+                        )
+                        _si_tip_count = len(_re_si_tips.findall(r'[\u0D80-\u0DFF]', _block_tips_si or ''))
+                        if _block_tips_si and _si_tip_count >= 5:
+                            # Wrap each sentence in the block as a bullet
+                            _tip_sentences = [s.strip() for s in
+                                              _re_si_tips.split(r'(?<=[.!?])\s+', _block_tips_si)
+                                              if len(s.strip()) > 8]
+                            if _tip_sentences:
+                                translated_tips = [f'• {s}' for s in _tip_sentences[:4]]
+                                print(f"✓ Block tip translation fallback: {len(translated_tips)} tips")
+                    except Exception as _tte:
+                        print(f"⚠️  Block tip translation failed: {_tte}")
                 if translated_tips:
                     personalized_tips = '\n'.join(translated_tips)
                 else:
