@@ -163,6 +163,14 @@ class EnhancedAyurvedicRAG:
         r"information.*april 20",
         r"knowledge cutoff",
         r"cannot address",
+        # Footnote / disclaimer lines the model sometimes appends
+        r"\(\*this note",
+        r"\*this note",
+        r"serves merely educational",
+        r"modern medical advice",
+        r"consult.*qualified.*before",
+        r"not a substitute for",
+        r"this information is for educational",
     ]
 
     def _clean_garbled_text(self, text: str) -> str:
@@ -727,53 +735,77 @@ class EnhancedAyurvedicRAG:
 
     def _generate_structured_herb_answer(self, herb_name: str, question: str, context_summary: str) -> str:
         """
-        Generate a structured multi-section herb answer using few-shot continuation.
-        Phi-3-mini works reliably with completed examples — no placeholder syntax.
+        Generate 4 rich bullet-point herb guide using a ginger few-shot example.
+        Output is always • bullet format (no numbered sections) so it feeds into
+        the existing flat-bullet translation pipeline without extra processing.
         """
-        print(f"🌿 Generating structured answer for herb: '{herb_name}'")
+        print(f"🌿 Generating herb guide for: '{herb_name}'")
         try:
             import re as _re_s
             h = herb_name  # short alias
             prompt = (
-                f"You are an Ayurvedic doctor. Write a health guide about {h}.\n"
-                f"Only write about {h}. Be specific and factual. No author names.\n\n"
-                f"Ayurvedic context:\n{context_summary[:1000]}\n\n"
-                f"--- EXAMPLE (topic: turmeric) ---\n"
-                f"Benefits:\n"
-                f"1. Reduces inflammation and eases joint pain and swelling effectively.\n"
-                f"2. Improves digestion and stimulates bile production in the liver.\n"
-                f"3. Boosts immunity and fights bacterial and viral infections naturally.\n"
-                f"4. Balances blood sugar levels and supports healthy metabolism.\n\n"
-                f"How to use:\n"
-                f"- Add half teaspoon of turmeric powder to warm milk and drink at night.\n"
-                f"- Mix turmeric with honey and take one teaspoon before meals.\n\n"
-                f"Ayurvedic note:\n"
-                f"- Balances Pitta and Kapha doshas and strengthens digestive fire (Agni).\n\n"
-                f"Caution:\n"
-                f"- Do not exceed one teaspoon per day. Avoid on empty stomach if you have acidity.\n"
+                f"You are a knowledgeable Ayurvedic doctor explaining {h} to a patient.\n"
+                f"Use this Ayurvedic knowledge:\n{context_summary[:1000]}\n\n"
+                f"--- EXAMPLE (topic: ginger) ---\n"
+                f"• Ginger contains gingerols that reduce Vata-driven inflammation and relieve joint pain.\n"
+                f"• Drinking ginger tea daily improves digestion, relieves nausea, and kindles digestive fire Agni.\n"
+                f"• Ginger balances Vata and Kapha doshas and builds immunity against colds and respiratory infections.\n"
+                f"• Take half teaspoon ginger powder with honey or add fresh ginger slices to warm water daily.\n"
                 f"--- END EXAMPLE ---\n\n"
-                f"Now write the same guide for {h}:\n\n"
-                f"Benefits:\n"
+                f"Now write EXACTLY 4 bullet points about {h}.\n"
+                f"RULES:\n"
+                f"- Each bullet = 1 complete informative sentence (15–25 words).\n"
+                f"- Cover: main health benefit, how to use it, which doshas it affects, one caution.\n"
+                f"- Only write about {h}. Do NOT mention other herbs unless combined with {h}.\n"
+                f"- No author names. No numbered lists. No introductions. Start every line with •\n\n"
+                f"• "
             )
             messages = [{"role": "user", "content": prompt}]
             raw = self.llm.generate_from_messages(
-                messages, max_new_tokens=380, min_new_tokens=150, temperature=0.25
+                messages, max_new_tokens=280, min_new_tokens=100, temperature=0.20
             )
             raw = self._clean_garbled_text(raw)
 
-            # Model may echo 'Benefits:' as first line — strip it
-            raw_body = _re_s.sub(r'^\s*Benefits:\s*\n?', '', raw.lstrip(), count=1).lstrip()
+            # Reconstruct with first bullet that was consumed by the prompt prefix
+            raw_with_first = ("• " + raw.lstrip("• \n\r")).strip()
+            bullets = [l.strip() for l in raw_with_first.splitlines() if l.strip().startswith("•")]
 
-            # Validate: structured answer must contain at least 2 numbered items
-            if not _re_s.search(r'^\d+\.', raw_body, _re_s.MULTILINE):
-                print("⚠️  Structured gen: no numbered items found, falling back")
+            # If model produced numbered lines instead of bullets, convert them
+            if len(bullets) < 2:
+                converted = _re_s.sub(r'^\d+\.\s+', '• ', raw_with_first, flags=_re_s.MULTILINE)
+                bullets = [l.strip() for l in converted.splitlines() if l.strip().startswith("•")]
+
+            # Extend from sentence splits if still short
+            if len(bullets) < 3:
+                sents = [s.strip() for s in _re_s.split(r'(?<=[.!?])\s+', raw) if len(s.strip()) > 20]
+                used: set = set()
+                for b in bullets:
+                    used.update(b.lower().split())
+                for s in sents:
+                    if len(bullets) >= 4:
+                        break
+                    clean = _re_s.sub(r'^[•\-\*\d\.]+\s*', '', s).strip()
+                    if clean and len(clean) > 20 and len(set(clean.lower().split()) & used) <= 3:
+                        bullets.append(f"• {clean}")
+                        used.update(clean.lower().split())
+
+            # Clip bullets to 200 chars
+            def _clip_b(b: str) -> str:
+                if len(b) > 200:
+                    b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                return b
+
+            bullets = [_clip_b(b) for b in bullets[:4]]
+
+            if len(bullets) < 2:
+                print("⚠️  Herb guide: fewer than 2 bullets, falling back to flat pipeline")
                 return ""
 
-            result = (f"Benefits:\n" + raw_body).strip()
-            print(f"   Structured answer length: {len(result)} chars")
+            result = '\n'.join(bullets)
+            print(f"   Herb guide length: {len(result)} chars, {len(bullets)} bullets")
             return result
         except Exception as e:
-            print(f"⚠️  Structured herb generation failed: {e}")
+            print(f"⚠️  Herb guide generation failed: {e}")
             return ""
 
     def _translate_structured_to_sinhala(self, structured_text: str) -> str:
@@ -956,6 +988,23 @@ class EnhancedAyurvedicRAG:
             if primary_topic:
                 print(f"🌿 Sinhala Unicode primary topic pinned: '{primary_topic}'")
 
+        # For plain English queries: extract primary_topic from the question directly,
+        # so English "benefits of turmeric" also uses the herb-guide path instead of flat bullets.
+        if not primary_topic and detected_language != 'si':
+            import re as _re_en
+            _HERB_KEYWORDS_EN = {
+                'cinnamon', 'turmeric', 'ginger', 'neem', 'tulsi', 'ashwagandha',
+                'triphala', 'amla', 'brahmi', 'ghee', 'sesame', 'cardamom',
+                'cumin', 'coriander', 'fennel', 'licorice', 'pepper', 'garlic',
+                'fenugreek', 'aloe', 'coconut', 'sandalwood', 'shatavari', 'guduchi',
+            }
+            for _tok in _re_en.findall(r'\b[a-z]+\b', question.lower()):
+                if _tok in _HERB_KEYWORDS_EN:
+                    primary_topic = _tok
+                    break
+            if primary_topic:
+                print(f"🌿 English primary topic pinned: '{primary_topic}'")
+
         # Expand query. If primary_topic was extracted, prepend it so FAISS finds
         # the most relevant passages even before the translated question words help.
         search_query = self._expand_query_with_ayurvedic_terms(
@@ -1036,10 +1085,10 @@ class EnhancedAyurvedicRAG:
                     f"• Do NOT use abbreviations like 'w/' — write full words only.\n"
                     f"• Write as a knowledgeable Ayurvedic doctor, not as someone reading a book.\n\n"
                     f"Example (for a different topic):\n"
-                    f"• Turmeric contains curcumin which reduces Pitta-driven inflammation in joints and tissues.\n"
-                    f"• Daily intake of turmeric with warm milk improves digestion and detoxifies the liver.\n"
-                    f"• Turmeric balances Kapha and Vata doshas and strengthens the immune system naturally.\n"
-                    f"• Applying turmeric paste externally heals skin infections and reduces redness effectively.\n\n"
+                    f"• Ginger contains gingerols that reduce Vata-driven inflammation and relieve joint pain.\n"
+                    f"• Drinking ginger tea daily improves digestion, relieves nausea, and kindles digestive fire Agni.\n"
+                    f"• Ginger balances Vata and Kapha doshas and builds immunity against colds and respiratory infections.\n"
+                    f"• Take half teaspoon ginger powder with honey or add fresh ginger slices to warm water daily.\n\n"
                     f"Now write 4 bullet point summary about: {topic_hint}\n\n"
                     f"•"
                 )
@@ -1205,14 +1254,9 @@ class EnhancedAyurvedicRAG:
         
         if self.enable_translation and self.translator and detected_language == 'si':
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
-            if is_structured:
-                # Structured herb answer: translate section-by-section
-                print("🔄 Translating structured herb answer to Sinhala...")
-                display_answer = self._translate_structured_to_sinhala(final_answer)
-                if not display_answer or len(display_answer.strip()) < 20:
-                    display_answer = final_answer
-                print(f"✓ Structured translation complete: {display_answer[:100]}...")
-            else:
+            # Both structured (• bullet guide) and flat bullets use the same bullet-by-bullet
+            # path — structured answers now always output • bullets, not section headings.
+            if True:
                 # Flat bullets: translate each bullet individually
                 print("🔄 Translating answer to Sinhala (bullet-by-bullet)...")
                 import re as _re2
