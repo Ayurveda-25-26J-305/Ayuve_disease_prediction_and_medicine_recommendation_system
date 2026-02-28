@@ -155,6 +155,14 @@ class EnhancedAyurvedicRAG:
         r"as mentioned (in|by|across)",
         r"as stated (in|by)",
         r"as described (in|by)",
+        # Knowledge-base disclaimer patterns
+        r"note:.*assistant",
+        r"outside.*knowledge base",
+        r"beyond.*established facts",
+        r"hypothetical scenarios",
+        r"information.*april 20",
+        r"knowledge cutoff",
+        r"cannot address",
     ]
 
     def _clean_garbled_text(self, text: str) -> str:
@@ -485,90 +493,50 @@ class EnhancedAyurvedicRAG:
     
     def _cleanup_translated_answer(self, translated_text: str) -> str:
         """
-        Post-process translated Sinhala text to fix common issues:
-        - Remove incomplete sentences
-        - Fix formatting
-        - Remove gibberish words
+        Post-process translated Sinhala text.
+        Keeps any line that has meaningful Sinhala content.
+        Previously over-strict vowel-ending checks were discarding valid translations.
         """
         import re
-        
+
         if not translated_text or not translated_text.strip():
             return ""
-        
-        # Split into lines
+
         lines = translated_text.split('\n')
         cleaned_lines = []
-        
+
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-            
-            # Extract bullet and content
-            if line.startswith('-'):
-                bullet = '- '
-                content = line[2:].strip()
-            else:
-                bullet = ''
-                content = line.strip()
-            
-            if not content:
-                continue
-            
-            # Check for gibberish (words with unusual character patterns)
-            # Look for words that don't follow Sinhala patterns (e.g., "නයිබර්")
-            words = content.split()
-            cleaned_words = []
-            
-            for word in words:
-                # Check if word has Sinhala characters
-                has_sinhala = bool(re.search(r'[\u0D80-\u0DFF]', word))
-                
-                if has_sinhala:
-                    # Check for gibberish patterns (isolated vowel signs, excessive marks)
-                    # Filter out words with unusual patterns like excessive ් (al-lakuna)
-                    gibberish_pattern = r'([\u0DCA]{2,})|([ා-ෟ]{3,})'
-                    if not re.search(gibberish_pattern, word):
-                        cleaned_words.append(word)
-                else:
-                    # Keep non-Sinhala words (numbers, punctuation)
-                    cleaned_words.append(word)
-            
-            if not cleaned_words:
-                continue
-            
-            content = ' '.join(cleaned_words)
-            
-            # Check if sentence is complete
-            # Sinhala sentences typically end with: ය, ා, ී, ෙ, ති, ද, ට, ම, න, ව, or punctuation
-            sinhala_endings = r'[යාීෙතිදටමනව.!?]$'
-            
-            # Skip if too short and doesn't end properly
-            if len(content) < 30:
-                if not re.search(sinhala_endings, content):
-                    continue
-            
-            # If reasonably long but doesn't end properly, skip it
-            if len(content) >= 30 and len(content) < 100:
-                if not re.search(sinhala_endings, content):
-                    continue
-            
-            # For long text, check if it ends with Sinhala or punctuation
-            if len(content) >= 100:
-                if not re.search(r'[\u0D80-\u0DFF.!?]$', content):
-                    # Incomplete, skip it
-                    continue
-            
-            # Add cleaned line
-            if content:
-                cleaned_lines.append(f"{bullet}{content}")
-        
-        # Ensure we have at least some content
+
+            # Count Sinhala Unicode characters in this line
+            sinhala_chars = len(re.findall(r'[\u0D80-\u0DFF]', line))
+
+            # Keep lines that either:
+            # (a) have at least 4 Sinhala characters and ≥8 total chars, OR
+            # (b) are section headings (contain ':'), OR
+            # (c) are short but have some Sinhala content (≥2 chars) for numbered items
+            is_heading = ':' in line and len(line) < 60
+            has_number_prefix = bool(re.match(r'^\d+\.', line))
+            has_bullet = line.startswith('•') or line.startswith('-')
+
+            if is_heading and sinhala_chars >= 1:
+                cleaned_lines.append(line)
+            elif has_number_prefix and sinhala_chars >= 2:
+                cleaned_lines.append(line)
+            elif has_bullet and sinhala_chars >= 4:
+                cleaned_lines.append(line)
+            elif sinhala_chars >= 6 and len(line) >= 8:
+                cleaned_lines.append(line)
+            # Drop lines with almost no Sinhala (likely untranslated English fragments)
+
         if not cleaned_lines:
-            return translated_text  # Return original if cleanup removed everything
-        
+            # Nothing passed — return original so caller can decide
+            return translated_text
+
         return '\n'.join(cleaned_lines)
-    
+
     def _add_term_clarification(self, answer: str, original_question: str, is_romanized: bool) -> str:
         """
         Add term clarification to answer for romanized Singlish queries.
@@ -759,50 +727,49 @@ class EnhancedAyurvedicRAG:
 
     def _generate_structured_herb_answer(self, herb_name: str, question: str, context_summary: str) -> str:
         """
-        Generate a structured multi-section herb answer (like a human doctor would write).
-        Produces: Benefits (numbered) + How to use + Ayurvedic note + Caution.
-        Used for Singlish herb queries where we know the exact herb requested.
+        Generate a structured multi-section herb answer using few-shot continuation.
+        Phi-3-mini works reliably with completed examples — no placeholder syntax.
         """
         print(f"🌿 Generating structured answer for herb: '{herb_name}'")
         try:
             import re as _re_s
+            h = herb_name  # short alias
             prompt = (
-                f"You are a knowledgeable Ayurvedic doctor.\n"
-                f"Patient asked: \"{question}\"\n"
-                f"Herb: {herb_name}\n\n"
-                f"Ayurvedic context (use for grounding):\n{context_summary}\n\n"
-                f"Write a clear, structured guide about {herb_name} with these EXACT sections:\n\n"
-                f"**Benefits of {herb_name}:**\n"
-                f"1. [benefit 1 — 10-15 words]\n"
-                f"2. [benefit 2 — 10-15 words]\n"
-                f"3. [benefit 3 — 10-15 words]\n"
-                f"4. [benefit 4 — 10-15 words]\n\n"
-                f"**How to use:**\n"
-                f"• [practical usage 1 — how patient should take it]\n"
-                f"• [practical usage 2]\n\n"
-                f"**Ayurvedic note:**\n"
-                f"• [which doshas it balances, and Agni / digestive benefit — 15 words]\n\n"
-                f"**Caution:**\n"
-                f"• [1-2 sentences on dosage limit or side effects for safety]\n\n"
-                f"RULES:\n"
-                f"• EVERY item must be about {herb_name} specifically. Not other herbs.\n"
-                f"• No author names, no book titles, no source labels.\n"
-                f"• Plain English only — no unreadable Sanskrit compound words.\n"
-                f"• Be specific, practical, and factual.\n\n"
-                f"**Benefits of {herb_name}:**"
+                f"You are an Ayurvedic doctor. Write a health guide about {h}.\n"
+                f"Only write about {h}. Be specific and factual. No author names.\n\n"
+                f"Ayurvedic context:\n{context_summary[:1000]}\n\n"
+                f"--- EXAMPLE (topic: turmeric) ---\n"
+                f"Benefits:\n"
+                f"1. Reduces inflammation and eases joint pain and swelling effectively.\n"
+                f"2. Improves digestion and stimulates bile production in the liver.\n"
+                f"3. Boosts immunity and fights bacterial and viral infections naturally.\n"
+                f"4. Balances blood sugar levels and supports healthy metabolism.\n\n"
+                f"How to use:\n"
+                f"- Add half teaspoon of turmeric powder to warm milk and drink at night.\n"
+                f"- Mix turmeric with honey and take one teaspoon before meals.\n\n"
+                f"Ayurvedic note:\n"
+                f"- Balances Pitta and Kapha doshas and strengthens digestive fire (Agni).\n\n"
+                f"Caution:\n"
+                f"- Do not exceed one teaspoon per day. Avoid on empty stomach if you have acidity.\n"
+                f"--- END EXAMPLE ---\n\n"
+                f"Now write the same guide for {h}:\n\n"
+                f"Benefits:\n"
             )
             messages = [{"role": "user", "content": prompt}]
             raw = self.llm.generate_from_messages(
-                messages, max_new_tokens=420, min_new_tokens=180, temperature=0.3
+                messages, max_new_tokens=380, min_new_tokens=150, temperature=0.25
             )
             raw = self._clean_garbled_text(raw)
-            import re as _re_s
-            # Fix double-heading: model echoes the heading because the prompt ends with it.
-            # Strip any leading repetition of '**Benefits of ...:**' before prepending.
-            raw_body = _re_s.sub(
-                r'^\s*\*\*Benefits of[^*]+\*\*\s*\n?', '', raw.lstrip(), count=1
-            ).lstrip()
-            result = (f"**Benefits of {herb_name}:**\n" + raw_body).strip()
+
+            # Model may echo 'Benefits:' as first line — strip it
+            raw_body = _re_s.sub(r'^\s*Benefits:\s*\n?', '', raw.lstrip(), count=1).lstrip()
+
+            # Validate: structured answer must contain at least 2 numbered items
+            if not _re_s.search(r'^\d+\.', raw_body, _re_s.MULTILINE):
+                print("⚠️  Structured gen: no numbered items found, falling back")
+                return ""
+
+            result = (f"Benefits:\n" + raw_body).strip()
             print(f"   Structured answer length: {len(result)} chars")
             return result
         except Exception as e:
@@ -822,10 +789,15 @@ class EnhancedAyurvedicRAG:
 
         # Map English section headings to Sinhala
         HEADING_MAP = {
-            r'\*\*Benefits of (.+?):\*\*': lambda m: f'**{m.group(1)} ගුණ:**',
-            r'\*\*How to use:\*\*':         '**භාවිතා කිරීම:**',
-            r'\*\*Ayurvedic note:\*\*':      '**ආයුර්වේද සටහන:**',
-            r'\*\*Caution:\*\*':             '**සැලකිල්ල:**',
+            r'^Benefits:$':         'ප්‍රධාන ගුණ:',
+            r'^Benefits of .+:$':   lambda m: m.group(0).replace('Benefits of ', '').replace(':', ' ගුණ:'),
+            r'^How to use:$':       'භාවිතා කිරීම:',
+            r'^Ayurvedic note:$':   'ආයුර්වේද සටහන:',
+            r'^Caution:$':          'සැලකිල්ල:',
+            r'^\*\*Benefits of (.+):\*\*$': lambda m: f'**{m.group(1)} ගුණ:**',
+            r'^\*\*How to use:\*\*$':       '**භාවිතා කිරීම:**',
+            r'^\*\*Ayurvedic note:\*\*$':    '**ආයුර්වේද සටහන:**',
+            r'^\*\*Caution:\*\*$':           '**සැලකිල්ල:**',
         }
 
         lines = structured_text.split('\n')
@@ -966,6 +938,23 @@ class EnhancedAyurvedicRAG:
                         break
             if primary_topic:
                 print(f"🌿 Singlish primary topic pinned: '{primary_topic}'")
+
+        # For Sinhala Unicode queries: extract primary_topic from the translated English
+        # question so we can still pin the LLM and re-rank FAISS the same way.
+        if not primary_topic and not is_romanized and detected_language == 'si':
+            import re as _re_si
+            _HERB_KEYWORDS = {
+                'cinnamon', 'turmeric', 'ginger', 'neem', 'tulsi', 'ashwagandha',
+                'triphala', 'amla', 'brahmi', 'ghee', 'sesame', 'cardamom',
+                'cumin', 'coriander', 'fennel', 'licorice', 'pepper', 'garlic',
+                'fenugreek', 'aloe', 'coconut', 'sandalwood', 'shatavari', 'guduchi',
+            }
+            for _tok in _re_si.findall(r'\b[a-z]+\b', question.lower()):
+                if _tok in _HERB_KEYWORDS:
+                    primary_topic = _tok
+                    break
+            if primary_topic:
+                print(f"🌿 Sinhala Unicode primary topic pinned: '{primary_topic}'")
 
         # Expand query. If primary_topic was extracted, prepend it so FAISS finds
         # the most relevant passages even before the translated question words help.
