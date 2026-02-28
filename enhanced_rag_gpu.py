@@ -138,7 +138,8 @@ class EnhancedAyurvedicRAG:
         
         logger.info("EnhancedAyurvedicRAG initialized (GPU FORCED)")
     
-    # Phrases that indicate the model broke character and started talking about itself
+    # Phrases that indicate the model broke character and started talking about itself,
+    # or is echoing source/author metadata instead of answering the question.
     _SELF_TALK_PATTERNS = [
         r"i apologize", r"apologies for", r"i'm sorry", r"sorry for",
         r"let me (re)?address", r"let'?s address", r"let me clarify",
@@ -148,6 +149,12 @@ class EnhancedAyurvedicRAG:
         r"regarding your (request|question)",
         r"to address your", r"now regarding", r"let me now",
         r"for any confusion", r"any confusion earlier",
+        # Author-echo patterns — model citing sources it shouldn't
+        r"\w+'?s\s+(book|insights?|research|work|findings?|text|study|view)",
+        r"according to \w+",
+        r"as mentioned (in|by|across)",
+        r"as stated (in|by)",
+        r"as described (in|by)",
     ]
 
     def _clean_garbled_text(self, text: str) -> str:
@@ -162,6 +169,15 @@ class EnhancedAyurvedicRAG:
 
         if not text:
             return text
+
+        # Normalize common shorthand before any other processing
+        text = text.replace("w/o ", "without ").replace("w/ ", "with ")
+        text = _re.sub(r'\bw/', 'with', text)  # catch 'w/Pittahd' etc.
+        # Remove possessive author-echo patterns like "Nithya Rajan's insights"
+        text = _re.sub(
+            r"\b[A-Z][a-z]+(\s+[A-Z][a-z]+)?'s\s+(book|insights?|research|work|findings?|text|study|view)s?",
+            "", text, flags=_re.IGNORECASE
+        )
 
         # Compile self-talk pattern once
         self_talk_re = _re.compile(
@@ -253,35 +269,28 @@ class EnhancedAyurvedicRAG:
         return '\n'.join(cleaned_lines)
 
     def _build_context_with_citations(self, docs):
-        """Build LLM context including citations"""
+        """Build LLM context including citations.
+        NOTE: Author/book names are intentionally excluded here to prevent the LLM
+        from echoing them in the answer. Citation data is stored in doc metadata
+        and added to the API response separately.
+        """
         context_blocks = []
         for i, doc in enumerate(docs, 1):
             meta = doc.get("metadata", {})
-            book = doc.get("source", "Unknown Book")
             doc_type = doc.get("type", "unknown")
             
-            # Handle book vs QA sources differently
             if doc_type == "book":
-                chapter = meta.get("chapter", "N/A")
-                paragraph = meta.get("paragraph", meta.get("verse", "N/A"))
                 # 500 chars gives LLM richer content to synthesise informative bullets
                 doc_text = doc.get("text", "")[:500]
-                block = f"""[Source {i}]
-Book: {book}
-Chapter: {chapter}
-Verse/Paragraph: {paragraph}
-
-{doc_text}"""
+                block = f"[Ayurvedic Knowledge {i}]\n{doc_text}"
             else:
-                # QA dataset entry
-                qa_question = meta.get("question", "N/A")
-                # Use 500 chars per QA source for richer context
+                # QA dataset: include the related question as useful context
+                qa_question = meta.get("question", "")
                 doc_text = doc.get("text", "")[:500]
-                block = f"""[Source {i}]
-Type: Ayurvedic Q&A Reference
-Related Question: {qa_question}
-
-{doc_text}"""
+                if qa_question:
+                    block = f"[Ayurvedic Q&A {i}]\nRelated: {qa_question}\n{doc_text}"
+                else:
+                    block = f"[Ayurvedic Q&A {i}]\n{doc_text}"
             
             context_blocks.append(block.strip())
         
@@ -640,6 +649,9 @@ Related Question: {qa_question}
                 f"• ONLY use herbs and practices from this list: {AYURVEDIC_HERBS}\n"
                 f"• Do NOT invent fictional remedies or non-Ayurvedic ingredients.\n"
                 f"• Each tip must be specific and actionable.\n"
+                f"• Do NOT mention author names, book titles, or source labels.\n"
+                f"• Do NOT use abbreviations like 'w/' — write full words only.\n"
+                f"• Do NOT invent Sanskrit/Ayurvedic compound terms not in the herbs list.\n"
                 f"• Start every tip with • symbol on its own line. NO introduction text.\n\n"
                 f"Example (topic: digestion):\n"
                 f"• Drink warm ginger tea before meals to stimulate Agni and ease digestion.\n"
@@ -806,12 +818,15 @@ Related Question: {qa_question}
                     f"Patient question: \"{question}\"\n\n"
                     f"Ayurvedic Knowledge Sources:\n{context_summary}\n\n"
                     f"Task: Write a SUMMARY with EXACTLY 4 bullet points that directly answer: {topic_hint}\n\n"
-                    f"RULES:\n"
+                    f"STRICT RULES:\n"
                     f"• Each bullet point = 1 complete informative sentence (15–25 words).\n"
                     f"• Each bullet MUST mention a specific herb, remedy, dosha, or Ayurvedic concept.\n"
                     f"• Cover different aspects: e.g. main benefit, remedy/herb, dosha effect, lifestyle tip.\n"
                     f"• Start EVERY bullet with the • symbol on its own line.\n"
-                    f"• NO introduction sentence. NO conclusion. NO numbered lists. ONLY the 4 bullets.\n\n"
+                    f"• NO introduction sentence. NO conclusion. NO numbered lists. ONLY the 4 bullets.\n"
+                    f"• Do NOT mention any author names, researcher names, book titles, or source labels.\n"
+                    f"• Do NOT use abbreviations like 'w/' — write full words only.\n"
+                    f"• Write as a knowledgeable Ayurvedic doctor, not as someone reading a book.\n\n"
                     f"Example (for a different topic):\n"
                     f"• Turmeric contains curcumin which reduces Pitta-driven inflammation in joints and tissues.\n"
                     f"• Daily intake of turmeric with warm milk improves digestion and detoxifies the liver.\n"
