@@ -796,8 +796,13 @@ class EnhancedAyurvedicRAG:
                 messages, max_new_tokens=420, min_new_tokens=180, temperature=0.3
             )
             raw = self._clean_garbled_text(raw)
-            # Reconstruct full output (prompt ends with the first section heading)
-            result = (f"**Benefits of {herb_name}:**\n" + raw.lstrip()).strip()
+            import re as _re_s
+            # Fix double-heading: model echoes the heading because the prompt ends with it.
+            # Strip any leading repetition of '**Benefits of ...:**' before prepending.
+            raw_body = _re_s.sub(
+                r'^\s*\*\*Benefits of[^*]+\*\*\s*\n?', '', raw.lstrip(), count=1
+            ).lstrip()
+            result = (f"**Benefits of {herb_name}:**\n" + raw_body).strip()
             print(f"   Structured answer length: {len(result)} chars")
             return result
         except Exception as e:
@@ -1051,83 +1056,19 @@ class EnhancedAyurvedicRAG:
                 )
             }
         ]
-        print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
-
-        # Generate answer — temperature=0.25 keeps output grounded; min 120 tokens = ~4 bullets
-        print("💭 Generating answer...")
-        raw_answer = self.llm.generate_from_messages(
-            messages, max_new_tokens=dynamic_tokens, min_new_tokens=120, temperature=0.25
-        )
-
-        # Remove tokenization artifacts (e.g. 'turmer03r', 'exac0stuate') before processing
-        raw_answer = self._clean_garbled_text(raw_answer)
-
-        # Strip any leading bullet/dash the model added (prompt already ends with '•')
-        # This prevents double-prefix like '• - text' or '• • text'
+        # ── GENERATION STRATEGY ──────────────────────────────────────────────────
+        # Singlish herb query (primary_topic known): use structured herb answer
+        # directly — skip the flat-bullet generation entirely so we don't waste
+        # an LLM call and don't produce off-topic flat bullets that leak through.
+        # English/unknown queries: run existing flat-bullet pipeline.
         import re as _re
-        raw_answer_clean = _re.sub(r'^[\s•\-\*]+', '', raw_answer).strip()
-        raw_combined = ("• " + raw_answer_clean).strip()
 
-        # Helper: hard-clip a bullet to its first full sentence, allow up to 200 chars
-        import re as _re
-        def _clip_bullet(b: str) -> str:
-            b = b.strip()
-            # Strip accidental double prefix like '• -' or '• •'
-            b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
-            # Find first sentence end after at least 40 chars (allows richer content)
-            m = _re.search(r'(?<=[.!?])(?:\s|$)', b[40:])
-            if m:
-                b = b[:40 + m.start() + 1].strip()
-            # Hard cap at 200 chars
-            if len(b) > 200:
-                b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
-            return b
-
-        # Guarantee • bullet format
-        if '•' in raw_combined:
-            base_answer = raw_combined
-        else:
-            converted = _re.sub(r'^\d+\.\s+', '• ', raw_combined, flags=_re.MULTILINE)
-            if '•' in converted:
-                base_answer = converted
-            else:
-                sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
-                base_answer = '\n'.join(f'• {s}' for s in sents[:4])
-
-        # Extract bullets, hard-truncate each one, keep max 4
-        bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
-        bullets = [_clip_bullet(b) for b in bullets[:4]]
-
-        # FALLBACK: if model didn't produce enough • lines, split raw answer into sentences
-        if len(bullets) < 3:
-            # Split the raw output on sentence boundaries
-            extra_sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_answer)
-                           if len(s.strip()) > 25]
-            # Track words already captured to avoid duplication
-            used_words = set()
-            for b in bullets:
-                used_words.update(b.lower().split())
-            for sent in extra_sents:
-                if len(bullets) >= 4:
-                    break
-                clean = _re.sub(r'^[\s•\ -\ *\ d\ .]+', '', sent).strip()
-                # Skip if too similar to existing bullets (>3 words overlap)
-                sent_words = set(clean.lower().split())
-                if len(sent_words & used_words) > 3:
-                    continue
-                if clean and len(clean) > 25:
-                    new_b = _clip_bullet(f'• {clean}')
-                    bullets.append(new_b)
-                    used_words.update(sent_words)
-
-        if bullets:
-            base_answer = '\n'.join(bullets)
-
-        # For Singlish herb queries: override flat bullets with a structured multi-section
-        # answer (Benefits / How to use / Ayurvedic note / Caution) — much more useful than
-        # 4 academic bullets extracted from Ayurvedic book passages.
         is_structured = False
+        base_answer = ""
+
         if primary_topic:
+            # ── Structured path ──────────────────────────────────────────────────
+            print(f"🌿 Structured generation for '{primary_topic}' (skipping flat pipeline)")
             structured = self._generate_structured_herb_answer(
                 herb_name=primary_topic,
                 question=question,
@@ -1136,6 +1077,64 @@ class EnhancedAyurvedicRAG:
             if structured and len(structured.strip()) > 60:
                 base_answer = structured
                 is_structured = True
+                print(f"✅ Structured herb answer ready ({len(base_answer)} chars)")
+            else:
+                print("⚠️  Structured gen returned empty — falling back to flat pipeline")
+
+        if not is_structured:
+            # ── Flat-bullet path (English / fallback) ────────────────────────────
+            print("💭 Generating flat bullet answer...")
+            raw_answer = self.llm.generate_from_messages(
+                messages, max_new_tokens=dynamic_tokens, min_new_tokens=120, temperature=0.25
+            )
+            raw_answer = self._clean_garbled_text(raw_answer)
+
+            raw_answer_clean = _re.sub(r'^[\s•\-\*]+', '', raw_answer).strip()
+            raw_combined = ("• " + raw_answer_clean).strip()
+
+            def _clip_bullet(b: str) -> str:
+                b = b.strip()
+                b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
+                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[40:])
+                if m:
+                    b = b[:40 + m.start() + 1].strip()
+                if len(b) > 200:
+                    b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
+                return b
+
+            if '•' in raw_combined:
+                base_answer = raw_combined
+            else:
+                converted = _re.sub(r'^\d+\.\s+', '• ', raw_combined, flags=_re.MULTILINE)
+                if '•' in converted:
+                    base_answer = converted
+                else:
+                    sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
+                    base_answer = '\n'.join(f'• {s}' for s in sents[:4])
+
+            bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
+            bullets = [_clip_bullet(b) for b in bullets[:4]]
+
+            if len(bullets) < 3:
+                extra_sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_answer)
+                               if len(s.strip()) > 25]
+                used_words = set()
+                for b in bullets:
+                    used_words.update(b.lower().split())
+                for sent in extra_sents:
+                    if len(bullets) >= 4:
+                        break
+                    clean = _re.sub(r'^[\s•\ -\ *\ d\ .]+', '', sent).strip()
+                    sent_words = set(clean.lower().split())
+                    if len(sent_words & used_words) > 3:
+                        continue
+                    if clean and len(clean) > 25:
+                        new_b = _clip_bullet(f'• {clean}')
+                        bullets.append(new_b)
+                        used_words.update(sent_words)
+
+            if bullets:
+                base_answer = '\n'.join(bullets)
 
         print(f"✅ Generation complete! ({'structured' if is_structured else 'flat bullets'})")
         print(f"   Answer length: {len(base_answer)} chars")
@@ -1143,8 +1142,9 @@ class EnhancedAyurvedicRAG:
         
         if not base_answer or len(base_answer.strip()) < 10:
             print("⚠️  WARNING: Generated answer is empty or too short!")
-            print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
-            print(f"   Prompt used: {prompt[:500]}...")
+            if not is_structured:
+                _raw = locals().get('raw_answer', '')
+                print(f"   Raw answer: {_raw[:300] if _raw else '[NONE]'}...")
         
         # Validate
         validation_result = None
@@ -1156,11 +1156,12 @@ class EnhancedAyurvedicRAG:
                 top_k=validation_top_k
             )
         
-        # Personalize
+        # Personalize — skip for structured herb answers; the structured format is already
+        # self-contained and personalizer produces garbled output on non-bullet text.
         final_answer = base_answer
         is_personalized = False
-        
-        if self.enable_personalization and self.personalizer and user_profile:
+
+        if self.enable_personalization and self.personalizer and user_profile and not is_structured:
             print("✨ Personalizing answer...")
             final_answer = self.personalizer.personalize_answer(
                 base_answer=base_answer,
@@ -1201,8 +1202,8 @@ class EnhancedAyurvedicRAG:
             formatted_citations.append(citation)
         
         # === ADD TERM CLARIFICATION for romanized Singlish ===
-        # If user asked in romanized Singlish, explain what the terms mean
-        if detected_language == 'si' and is_romanized:
+        # Skip for structured answers — the herb name is already in the section heading.
+        if detected_language == 'si' and is_romanized and not is_structured:
             print("📝 Adding term clarification for romanized Singlish...")
             final_answer = self._add_term_clarification(
                 answer=final_answer,
