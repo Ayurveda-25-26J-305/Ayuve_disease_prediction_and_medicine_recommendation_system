@@ -1253,33 +1253,23 @@ class EnhancedAyurvedicRAG:
             }
         ]
         # ── GENERATION STRATEGY ──────────────────────────────────────────────────
-        # Singlish herb query (primary_topic known): use structured herb answer
-        # directly — skip the flat-bullet generation entirely so we don't waste
-        # an LLM call and don't produce off-topic flat bullets that leak through.
-        # English/unknown queries: run existing flat-bullet pipeline.
+        # Single unified pipeline for ALL queries (English, Singlish, Sinhala):
+        #   1. Translated English question → FAISS → context
+        #   2. LLM generates 4 English bullet points (topic-pinned when herb known)
+        #   3. _reconstruct_answer_for_display wraps bullets with intro/closing
+        #   4. For Sinhala/Singlish: translate the whole answer to Sinhala
+        #
+        # We no longer fork into a separate structured LLM call for herb queries —
+        # that path produced garbled output for some herbs and passed silently because
+        # it only checked length (> 60 chars), not content quality.
         import re as _re
 
-        is_structured = False
+        is_structured = False  # kept for downstream compat; always False now
         base_answer = ""
 
-        if primary_topic:
-            # ── Structured path ──────────────────────────────────────────────────
-            print(f"🌿 Structured generation for '{primary_topic}' (skipping flat pipeline)")
-            structured = self._generate_structured_herb_answer(
-                herb_name=primary_topic,
-                question=question,
-                context_summary=context_text[:1500]
-            )
-            if structured and len(structured.strip()) > 60:
-                base_answer = structured
-                is_structured = True
-                print(f"✅ Structured herb answer ready ({len(base_answer)} chars)")
-            else:
-                print("⚠️  Structured gen returned empty — falling back to flat pipeline")
-
         if not is_structured:
-            # ── Flat-bullet path (English / fallback) ────────────────────────────
-            print("💭 Generating flat bullet answer...")
+            # ── Flat-bullet pipeline (all queries) ───────────────────────────────
+            print(f"💭 Generating answer{'  for ' + primary_topic if primary_topic else ''}...")
             raw_answer = self.llm.generate_from_messages(
                 messages, max_new_tokens=dynamic_tokens, min_new_tokens=120, temperature=0.25
             )
@@ -1334,13 +1324,71 @@ class EnhancedAyurvedicRAG:
             if bullets:
                 base_answer = '\n'.join(bullets)
 
+        # ── QUALITY GATE: discard any bullet that is mostly garbage ──────────────
+        # A valid bullet should have at least 5 words of length ≥ 4 characters.
+        # Garbled output like "• To's , May to" has 0 qualifying words.
+        import re as _re_qg
+        def _bullet_is_meaningful(b: str) -> bool:
+            words = _re_qg.findall(r'\b[a-zA-Z]{4,}\b', b)
+            return len(words) >= 5
+
+        if base_answer:
+            good_bullets = [b for b in base_answer.splitlines()
+                            if not b.strip().startswith('•') or _bullet_is_meaningful(b)]
+            good_bullet_count = sum(1 for b in good_bullets if b.strip().startswith('•'))
+            if good_bullet_count < 2:
+                print(f"⚠️  Quality gate: only {good_bullet_count} meaningful bullets — using fallback")
+                base_answer = ""
+            elif good_bullet_count < len([b for b in base_answer.splitlines() if b.strip().startswith('•')]):
+                print(f"   Quality gate: kept {good_bullet_count} of "
+                      f"{len([b for b in base_answer.splitlines() if b.strip().startswith('•')])} bullets")
+                base_answer = '\n'.join(good_bullets)
+
         print(f"✅ Generation complete! ({'structured' if is_structured else 'flat bullets'})")
         print(f"   Answer length: {len(base_answer)} chars")
         print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
         
         if not base_answer or len(base_answer.strip()) < 10:
-            print("⚠️  WARNING: Generated answer is empty or too short!")
-            if not is_structured:
+            print("⚠️  WARNING: Generated answer is empty or too short — using factual fallback")
+            # Hard-coded, translation-ready fallback bullets for the most common herbs.
+            # Used ONLY when both LLM generation and quality gate fail — ensures the
+            # user always gets a Sinhala answer instead of silence.
+            _HERB_FALLBACKS = {
+                'cinnamon': (
+                    "• Cinnamon lowers blood sugar levels and helps manage diabetes naturally.\n"
+                    "• It has antibacterial properties that strengthen immunity and fight infections.\n"
+                    "• Cinnamon balances Vata and Kapha doshas and improves digestive function.\n"
+                    "• Add half teaspoon cinnamon powder to warm water or milk and drink daily."
+                ),
+                'ginger': (
+                    "• Ginger relieves nausea, improves digestion and reduces Vata-driven inflammation.\n"
+                    "• Drinking ginger tea daily kindles digestive fire and improves nutrient absorption.\n"
+                    "• Ginger balances Vata and Kapha doshas and builds immunity against infections.\n"
+                    "• Take fresh ginger slices with honey or add ginger powder to meals daily."
+                ),
+                'turmeric': (
+                    "• Turmeric contains curcumin which reduces Pitta-driven inflammation effectively.\n"
+                    "• Daily turmeric milk detoxifies the liver and improves overall digestion.\n"
+                    "• Turmeric balances Kapha and Vata doshas and strengthens the immune system.\n"
+                    "• Mix half teaspoon turmeric with warm milk or honey and take before bed."
+                ),
+                'neem': (
+                    "• Neem purifies blood and removes toxins that cause skin diseases effectively.\n"
+                    "• It balances Pitta and Kapha doshas and reduces inflammation in the body.\n"
+                    "• Neem has strong antibacterial properties that fight infections and fevers.\n"
+                    "• Boil neem leaves in water and drink the cooled liquid early morning daily."
+                ),
+                'ashwagandha': (
+                    "• Ashwagandha reduces stress and anxiety by balancing Vata dosha effectively.\n"
+                    "• It strengthens muscles, improves energy levels and supports adrenal function.\n"
+                    "• Ashwagandha builds Ojas (vital energy) and improves reproductive health.\n"
+                    "• Take one teaspoon ashwagandha powder with warm milk at night before sleep."
+                ),
+            }
+            if primary_topic and primary_topic.lower() in _HERB_FALLBACKS:
+                base_answer = _HERB_FALLBACKS[primary_topic.lower()]
+                print(f"   Using hard-coded fallback for '{primary_topic}'")
+            else:
                 _raw = locals().get('raw_answer', '')
                 print(f"   Raw answer: {_raw[:300] if _raw else '[NONE]'}...")
 
