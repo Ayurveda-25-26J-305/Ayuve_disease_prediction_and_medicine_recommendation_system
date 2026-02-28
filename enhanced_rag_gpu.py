@@ -1326,9 +1326,8 @@ class EnhancedAyurvedicRAG:
             if bullets:
                 base_answer = '\n'.join(bullets)
 
-        # ── QUALITY GATE: discard any bullet that is mostly garbage ──────────────
-        # A valid bullet should have at least 5 words of length ≥ 4 characters.
-        # Garbled output like "• To's , May to" has 0 qualifying words.
+        # ── QUALITY GATE: discard any bullet that is mostly garbage ─────────────
+        # A valid bullet must have at least 5 words of length ≥ 4 characters.
         import re as _re_qg
         def _bullet_is_meaningful(b: str) -> bool:
             words = _re_qg.findall(r'\b[a-zA-Z]{4,}\b', b)
@@ -1339,60 +1338,20 @@ class EnhancedAyurvedicRAG:
                             if not b.strip().startswith('•') or _bullet_is_meaningful(b)]
             good_bullet_count = sum(1 for b in good_bullets if b.strip().startswith('•'))
             if good_bullet_count < 2:
-                print(f"⚠️  Quality gate: only {good_bullet_count} meaningful bullets — using fallback")
+                print(f"⚠️  Quality gate: only {good_bullet_count} meaningful bullets — answer cleared")
                 base_answer = ""
             elif good_bullet_count < len([b for b in base_answer.splitlines() if b.strip().startswith('•')]):
-                print(f"   Quality gate: kept {good_bullet_count} of "
-                      f"{len([b for b in base_answer.splitlines() if b.strip().startswith('•')])} bullets")
+                print(f"   Quality gate: kept {good_bullet_count} good bullets")
                 base_answer = '\n'.join(good_bullets)
 
-        print(f"✅ Generation complete! ({'structured' if is_structured else 'flat bullets'})")
+        if not base_answer or len(base_answer.strip()) < 10:
+            print("⚠️  WARNING: Generated answer is empty after quality gate")
+            _raw = locals().get('raw_answer', '')
+            print(f"   Raw LLM output: {_raw[:300] if _raw else '[NONE]'}...")
+
+        print(f"✅ Generation complete! ({'flat bullets'})")
         print(f"   Answer length: {len(base_answer)} chars")
         print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
-        
-        if not base_answer or len(base_answer.strip()) < 10:
-            print("⚠️  WARNING: Generated answer is empty or too short — using factual fallback")
-            # Hard-coded, translation-ready fallback bullets for the most common herbs.
-            # Used ONLY when both LLM generation and quality gate fail — ensures the
-            # user always gets a Sinhala answer instead of silence.
-            _HERB_FALLBACKS = {
-                'cinnamon': (
-                    "• Cinnamon lowers blood sugar levels and helps manage diabetes naturally.\n"
-                    "• It has antibacterial properties that strengthen immunity and fight infections.\n"
-                    "• Cinnamon balances Vata and Kapha doshas and improves digestive function.\n"
-                    "• Add half teaspoon cinnamon powder to warm water or milk and drink daily."
-                ),
-                'ginger': (
-                    "• Ginger relieves nausea, improves digestion and reduces Vata-driven inflammation.\n"
-                    "• Drinking ginger tea daily kindles digestive fire and improves nutrient absorption.\n"
-                    "• Ginger balances Vata and Kapha doshas and builds immunity against infections.\n"
-                    "• Take fresh ginger slices with honey or add ginger powder to meals daily."
-                ),
-                'turmeric': (
-                    "• Turmeric contains curcumin which reduces Pitta-driven inflammation effectively.\n"
-                    "• Daily turmeric milk detoxifies the liver and improves overall digestion.\n"
-                    "• Turmeric balances Kapha and Vata doshas and strengthens the immune system.\n"
-                    "• Mix half teaspoon turmeric with warm milk or honey and take before bed."
-                ),
-                'neem': (
-                    "• Neem purifies blood and removes toxins that cause skin diseases effectively.\n"
-                    "• It balances Pitta and Kapha doshas and reduces inflammation in the body.\n"
-                    "• Neem has strong antibacterial properties that fight infections and fevers.\n"
-                    "• Boil neem leaves in water and drink the cooled liquid early morning daily."
-                ),
-                'ashwagandha': (
-                    "• Ashwagandha reduces stress and anxiety by balancing Vata dosha effectively.\n"
-                    "• It strengthens muscles, improves energy levels and supports adrenal function.\n"
-                    "• Ashwagandha builds Ojas (vital energy) and improves reproductive health.\n"
-                    "• Take one teaspoon ashwagandha powder with warm milk at night before sleep."
-                ),
-            }
-            if primary_topic and primary_topic.lower() in _HERB_FALLBACKS:
-                base_answer = _HERB_FALLBACKS[primary_topic.lower()]
-                print(f"   Using hard-coded fallback for '{primary_topic}'")
-            else:
-                _raw = locals().get('raw_answer', '')
-                print(f"   Raw answer: {_raw[:300] if _raw else '[NONE]'}...")
 
         # ── RECONSTRUCT: wrap raw bullets into a meaningful, user-friendly answer ──
         # Adds a context-aware intro sentence matched to the question intent (benefit /
@@ -1484,19 +1443,23 @@ class EnhancedAyurvedicRAG:
         
         if self.enable_translation and self.translator and detected_language == 'si':
             # Translate the full English answer to Sinhala as a single block.
-            # Use raw Google Translate output directly — no post-processing — so
-            # nothing gets accidentally stripped.
-            print("🔄 Translating answer to Sinhala...")
+            import re as _re_si_check
+            print(f"🔄 Translating answer to Sinhala...")
+            print(f"   [EN INPUT] {final_answer[:300]}...")  # visible in Colab for debugging
             try:
-                import re as _re_si_check
                 _block_si = self.translator.translate_en_to_si(final_answer)
                 if _block_si and _block_si.strip():
                     _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si))
-                    if _si_char_count >= 5:
+                    _en_len = len(final_answer.strip())
+                    _si_len = len(_block_si.strip())
+                    # Sanity check: Sinhala translation should be at least 25% as long
+                    # as English input. If it's shorter, translation was truncated/broken.
+                    if _si_char_count >= 10 and _si_len >= _en_len * 0.25:
                         display_answer = _block_si.strip()
-                        print(f"✓ Translation complete ({_si_char_count} Sinhala chars)")
+                        print(f"✓ Translation complete ({_si_char_count} Sinhala chars, {_si_len} total chars)")
                     else:
-                        print("⚠️  Translation returned mostly English — keeping English")
+                        print(f"⚠️  Translation too short ({_si_len} vs {_en_len} chars, "
+                              f"{_si_char_count} Sinhala chars) — keeping English")
             except Exception as _bte:
                 print(f"⚠️  Translation failed: {_bte}")
 
