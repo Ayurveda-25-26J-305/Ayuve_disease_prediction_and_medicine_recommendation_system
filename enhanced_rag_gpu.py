@@ -539,11 +539,18 @@ Related Question: {question}
         context_summary = context_text[:600]  # ~150 tokens of context
         messages = [
             {
+                "role": "system",
+                "content": (
+                    "You are an Ayurvedic knowledge assistant. "
+                    "Answer questions directly using only the provided sources. "
+                    "Do NOT start your answer with phrases like 'Ayurveda provides', 'Based on the sources', or 'According to'. "
+                    "Do NOT end with 'Follow these guidelines' or similar closings. "
+                    "Just give the answer directly in 2-3 sentences."
+                )
+            },
+            {
                 "role": "user",
                 "content": (
-                    f"You are an Ayurvedic knowledge assistant. "
-                    f"Using ONLY the sources below, write a clear and complete answer in 2-3 sentences. "
-                    f"Do not add information not in the sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}"
                 )
@@ -558,16 +565,21 @@ Related Question: {question}
         # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
         base_answer = raw_answer.strip()
 
-        # Strip any LLM-generated preamble lines the model sometimes prepends
+        # Strip LLM-generated preamble and suffix
         import re as _re
-        _preamble = _re.compile(
-            r'^(ayurveda provides[^:\n]*:\s*|'
-            r'based on the (sources|context)[^:\n]*:\s*|'
-            r'according to (the )?(sources|ayurveda)[^:\n]*:\s*|'
-            r'here (is|are)[^:\n]*:\s*)',
-            _re.IGNORECASE
-        )
-        base_answer = _preamble.sub('', base_answer).strip()
+        # Remove common preamble patterns (with optional bullets after colon)
+        base_answer = _re.sub(
+            r'^(ayurveda provides[^\n]*?:\s*[•\-\*]?\s*|'
+            r'based on the (?:sources|context)[^\n]*?:\s*[•\-\*]?\s*|'
+            r'according to (?:the )?(?:sources|ayurveda)[^\n]*?:\s*[•\-\*]?\s*|'
+            r'here (?:is|are)[^\n]*?:\s*[•\-\*]?\s*)',
+            '', base_answer, flags=_re.IGNORECASE
+        ).strip()
+        # Remove trailing boilerplate suffix the model sometimes appends
+        base_answer = _re.sub(
+            r'\n?follow these ayurvedic guidelines[^\n]*\.?\s*$',
+            '', base_answer, flags=_re.IGNORECASE
+        ).strip()
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
@@ -648,32 +660,24 @@ Related Question: {question}
             # Workflow: Singlish/Sinhala input → English processing → Sinhala output
             print("🔄 Translating answer to Sinhala...")
             
-            # Step 1: Simplify English for better translation
-            simplified_english = self._simplify_for_translation(final_answer)
-            print(f"📝 Simplified English: {simplified_english[:100]}...")
+            # Translate directly — no pre/post processing (cleanup was destroying valid Sinhala)
+            raw_translation = self.translator.translate_en_to_si(final_answer)
             
-            # Step 2: Translate to Sinhala
-            raw_translation = self.translator.translate_en_to_si(simplified_english)
-            
-            # Step 3: Clean up translated text (remove gibberish, incomplete sentences)
-            display_answer = self._cleanup_translated_answer(raw_translation)
-            print(f"✓ Translation complete: {display_answer[:100]}...")
-            
-            # Failsafe: If cleanup removed everything, use original English
-            if not display_answer or len(display_answer.strip()) < 20:
-                print("⚠️  Translation cleanup removed too much, using English")
+            if raw_translation and raw_translation.strip():
+                display_answer = raw_translation.strip()
+                print(f"✓ Translation complete: {display_answer[:100]}...")
+            else:
+                print("⚠️  Translation returned empty, using English")
                 display_answer = final_answer
 
         # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
             print("🔄 Translating personalized tips to Sinhala...")
-            simplified_tips = self._simplify_for_translation(personalized_tips)
-            raw_tips_si = self.translator.translate_en_to_si(simplified_tips)
-            tips_si = self._cleanup_translated_answer(raw_tips_si)
-            if tips_si and len(tips_si.strip()) >= 20:
-                personalized_tips = tips_si
+            raw_tips_si = self.translator.translate_en_to_si(personalized_tips)
+            if raw_tips_si and raw_tips_si.strip():
+                personalized_tips = raw_tips_si.strip()
             else:
-                print("⚠️  Tips translation cleanup removed too much, keeping English")
+                print("⚠️  Tips translation returned empty, keeping English")
 
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
