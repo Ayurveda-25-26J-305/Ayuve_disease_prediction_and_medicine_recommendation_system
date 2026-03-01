@@ -567,31 +567,42 @@ Related Question: {question}
 
         # Strip LLM-generated preamble and trailing boilerplate
         import re as _re
-        # Strategy: if the first line ends with ':' OR contains a known preamble phrase,
-        # drop everything up to and including that line (handles "Ayurveda provides...: •")
-        lines = base_answer.split('\n')
         _preamble_phrases = [
             'ayurveda provides', 'based on the sources', 'based on the context',
             'according to the sources', 'according to ayurveda', 'here are',
             'here is', 'health insights', 'following health', 'for your question',
             'follow these ayurvedic guidelines', 'these ayurvedic guidelines'
         ]
-        # Remove leading lines that are preamble
+        _trailing_phrases = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
+
+        lines = base_answer.split('\n')
+
+        # Remove / trim leading preamble lines
         while lines:
             first = lines[0].lower().strip()
             if any(phrase in first for phrase in _preamble_phrases) or first.endswith(':'):
+                # If there is real content after a colon on the same line, keep that part
+                colon_idx = lines[0].find(':')
+                after_colon = lines[0][colon_idx + 1:].strip() if colon_idx != -1 else ''
+                # Strip leading bullet from rescued content
+                after_colon = _re.sub(r'^[\u2022\-\*]\s*', '', after_colon).strip()
                 lines.pop(0)
+                if after_colon and len(after_colon) > 15:
+                    lines.insert(0, after_colon)  # put rescued content back at front
+                    break  # content found, stop stripping
             else:
                 break
-        # Remove trailing boilerplate line
+
+        # Remove trailing boilerplate lines
         while lines:
             last = lines[-1].lower().strip()
-            if any(phrase in last for phrase in ['follow these', 'guidelines consistently', 'safe and effective']):
+            if any(phrase in last for phrase in _trailing_phrases):
                 lines.pop()
             else:
                 break
+
         base_answer = '\n'.join(lines).strip()
-        # Also strip any leading bullet/dash left after preamble removal
+        # Strip any stray leading bullet left over
         base_answer = _re.sub(r'^[\u2022\-\*]\s*', '', base_answer).strip()
 
         print(f"✅ Generation complete!")
