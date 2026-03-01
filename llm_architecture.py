@@ -175,6 +175,7 @@ class LLMArchitecture:
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
+                repetition_penalty=1.3,  # prevents repetition loops (e.g. "000000...")
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
                 use_cache=True

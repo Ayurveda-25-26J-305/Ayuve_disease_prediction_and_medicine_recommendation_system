@@ -451,17 +451,20 @@ Related Question: {question}
         """
         print(f"💡 Generating personalized tips for {dosha} dosha...")
         try:
+            # Extract a short topic label from the answer for grounding tips
+            topic_preview = answer[:200].strip()
             prompt = (
-                f"You are an Ayurvedic health advisor. "
-                f"A user asked: \"{question}\"\n"
-                f"The answer was about: {answer[:300]}\n\n"
-                f"The question relates to the {dosha} dosha.\n"
-                f"Give exactly 2-3 short, practical personalized tips for someone with {dosha} "
-                f"constitution that are RELATED to this topic but NOT already mentioned in the answer. "
-                f"Format as a numbered list. Be concise (1-2 sentences each)."
+                f"Topic: {question}\n"
+                f"Context: {topic_preview}\n\n"
+                f"Give exactly 3 short, practical Ayurvedic tips that are DIRECTLY about "
+                f"this specific topic ({question}). "
+                f"Each tip must mention the specific herb, food, or remedy from the topic. "
+                f"Tailor the tips for a {dosha} dosha constitution. "
+                f"Do NOT give generic lifestyle advice. "
+                f"Format as a numbered list. Each tip in 1-2 sentences."
             )
             messages = [
-                {"role": "system", "content": "You are an Ayurvedic expert providing brief personalized health tips."},
+                {"role": "system", "content": "You are an Ayurvedic expert. Give specific, practical tips directly related to the topic asked."},
                 {"role": "user", "content": prompt}
             ]
             tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
