@@ -557,7 +557,18 @@ Related Question: {question}
 
         # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
         base_answer = raw_answer.strip()
-        
+
+        # Strip any LLM-generated preamble lines the model sometimes prepends
+        import re as _re
+        _preamble = _re.compile(
+            r'^(ayurveda provides[^:\n]*:\s*|'
+            r'based on the (sources|context)[^:\n]*:\s*|'
+            r'according to (the )?(sources|ayurveda)[^:\n]*:\s*|'
+            r'here (is|are)[^:\n]*:\s*)',
+            _re.IGNORECASE
+        )
+        base_answer = _preamble.sub('', base_answer).strip()
+
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
         print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
