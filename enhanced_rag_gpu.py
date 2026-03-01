@@ -1195,163 +1195,92 @@ class EnhancedAyurvedicRAG:
         print(f"📚 Context: {len([d for d in top_context_docs if d.get('type')=='book'])} book + "
               f"{len([d for d in top_context_docs if d.get('type')!='book'])} QA docs")
         
-        # 320 tokens = comfortably fits 4 rich summary bullets of up to 25 words each
-        dynamic_tokens = 320
+        # Simple, reliable generation — 200 tokens, 1200-char context.
+        # The Phi-3 model produces clean output with a natural sentence prompt.
+        # Complex bullet-count / word-count rules cause run-ons and garbled output.
+        dynamic_tokens = 200
 
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
-
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
+        context_summary = context_text[:1200]
 
-        # Rich summarization prompt — asks for 4 informative bullets covering
-        # causes/benefits, treatments/herbs, lifestyle advice, and a key fact.
-        context_summary = context_text[:2500]
-        topic_hint = question[:80].strip()
-        # Hard-pin constraint: list EVERY common herb except the queried one as forbidden.
-        # This stops the LLM from writing about turmeric inside a cinnamon answer, etc.
-        if primary_topic:
-            _ALL_HERBS = {
-                'ginger', 'turmeric', 'cinnamon', 'neem', 'tulsi', 'ashwagandha',
-                'triphala', 'amla', 'amalaki', 'brahmi', 'ghee', 'sesame', 'cardamom',
-                'cumin', 'coriander', 'fennel', 'licorice', 'pepper', 'black pepper',
-                'garlic', 'fenugreek', 'aloe', 'coconut', 'sandalwood', 'shatavari',
-                'guduchi', 'shilajit', 'pippali', 'haritaki', 'bibhitaki', 'triphala',
-                'bala', 'vidanga', 'vacha', 'musta',
-            }
-            _forbidden = sorted(_ALL_HERBS - {primary_topic.lower()})
-            topic_pin = (
-                f"⚠️  MANDATORY: The patient ONLY asked about '{primary_topic}'.\n"
-                f"Every bullet MUST be exclusively about {primary_topic}.\n"
-                f"FORBIDDEN herbs — do NOT mention any of these: "
-                f"{', '.join(_forbidden)}.\n\n"
-            )
-        else:
-            topic_pin = ""
+        topic_focus = f" Focus your answer specifically on {primary_topic}." if primary_topic else ""
         messages = [
             {
                 "role": "user",
                 "content": (
-                    f"You are a knowledgeable Ayurvedic doctor writing a clear summary for a patient.\n"
-                    f"Patient question: \"{question}\"\n\n"
-                    f"Ayurvedic Knowledge Sources:\n{context_summary}\n\n"
-                    f"{topic_pin}"
-                    f"Task: Write a SUMMARY with EXACTLY 4 bullet points that directly answer: {topic_hint}\n\n"
-                    f"STRICT RULES:\n"
-                    f"• Each bullet point = 1 complete informative sentence (15–25 words).\n"
-                    f"• Each bullet MUST mention a specific herb, remedy, dosha, or Ayurvedic concept.\n"
-                    f"• Cover different aspects: e.g. main benefit, remedy/herb, dosha effect, lifestyle tip.\n"
-                    f"• Start EVERY bullet with the • symbol on its own line.\n"
-                    f"• NO introduction sentence. NO conclusion. NO numbered lists. ONLY the 4 bullets.\n"
-                    f"• Do NOT mention any author names, researcher names, book titles, or source labels.\n"
-                    f"• Do NOT use abbreviations like 'w/' — write full words only.\n"
-                    f"• Write as a knowledgeable Ayurvedic doctor, not as someone reading a book.\n\n"
-                    f"Example (for a different topic):\n"
-                    f"• Ginger contains gingerols that reduce Vata-driven inflammation and relieve joint pain.\n"
-                    f"• Drinking ginger tea daily improves digestion, relieves nausea, and kindles digestive fire Agni.\n"
-                    f"• Ginger balances Vata and Kapha doshas and builds immunity against colds and respiratory infections.\n"
-                    f"• Take half teaspoon ginger powder with honey or add fresh ginger slices to warm water daily.\n\n"
-                    f"Now write 4 bullet point summary about: {topic_hint}"
+                    f"You are an Ayurvedic knowledge assistant.\n"
+                    f"Using ONLY the sources below, write a clear answer in 3-4 bullet points.\n"
+                    f"Each bullet point = 1 complete sentence about a different aspect "
+                    f"(e.g. health benefit, how to use, dosha effect, caution).{topic_focus}\n"
+                    f"Do NOT mention author names, book titles, or source labels.\n"
+                    f"Do NOT use abbreviations like 'w/' — write full words only.\n\n"
+                    f"Sources:\n{context_summary}\n\n"
+                    f"Question: {question}\n\n"
+                    f"Answer:\n• "
                 )
             }
         ]
-        # ── GENERATION STRATEGY ──────────────────────────────────────────────────
-        # Single unified pipeline for ALL queries (English, Singlish, Sinhala):
-        #   1. Translated English question → FAISS → context
-        #   2. LLM generates 4 English bullet points (topic-pinned when herb known)
-        #   3. _reconstruct_answer_for_display wraps bullets with intro/closing
-        #   4. For Sinhala/Singlish: translate the whole answer to Sinhala
-        #
-        # We no longer fork into a separate structured LLM call for herb queries —
-        # that path produced garbled output for some herbs and passed silently because
-        # it only checked length (> 60 chars), not content quality.
+
         import re as _re
+        is_structured = False  # kept for downstream compatibility
 
-        is_structured = False  # kept for downstream compat; always False now
-        base_answer = ""
+        print(f"💭 Generating answer{' for ' + primary_topic if primary_topic else ''}...")
+        raw_answer = self.llm.generate_from_messages(
+            messages, max_new_tokens=dynamic_tokens, min_new_tokens=60, temperature=0.25
+        )
+        raw_answer = self._clean_garbled_text(raw_answer)
 
-        if not is_structured:
-            # ── Flat-bullet pipeline (all queries) ───────────────────────────────
-            print(f"💭 Generating answer{'  for ' + primary_topic if primary_topic else ''}...")
-            raw_answer = self.llm.generate_from_messages(
-                messages, max_new_tokens=dynamic_tokens, min_new_tokens=120, temperature=0.25
-            )
-            raw_answer = self._clean_garbled_text(raw_answer)
+        # Normalise: if the model started with bullets keep them; otherwise split
+        # by sentence boundaries and wrap each sentence as a bullet.
+        import re as _re2
+        raw_answer = raw_answer.strip()
+        if not raw_answer.startswith('•'):
+            raw_answer = '• ' + raw_answer
 
-            # Strip ALL leading non-alpha characters (bullets, dashes, dots) to get
-            # clean text, then prefix with a single proper bullet.
-            raw_answer_clean = _re.sub(r'^[\s•\-\*\.\,\:\;]+', '', raw_answer).strip()
-            raw_combined = ("• " + raw_answer_clean).strip()
+        # Convert numbered lists to bullets
+        raw_answer = _re2.sub(r'^\d+\.\s+', '• ', raw_answer, flags=_re2.MULTILINE)
 
-            def _clip_bullet(b: str) -> str:
-                b = b.strip()
-                b = _re.sub(r'^(•\s*)[\-\*•]+\s*', r'\1', b)
-                m = _re.search(r'(?<=[.!?])(?:\s|$)', b[40:])
-                if m:
-                    b = b[:40 + m.start() + 1].strip()
-                if len(b) > 200:
-                    b = b[:200].rsplit(' ', 1)[0].rstrip(',:;') + '.'
-                return b
+        # Extract bullet lines; fall back to sentence-split if fewer than 2
+        bullet_lines = [l.strip() for l in raw_answer.splitlines() if l.strip().startswith('•')]
+        if len(bullet_lines) < 2:
+            sents = [s.strip() for s in _re2.split(r'(?<=[.!?])\s+', raw_answer) if len(s.strip()) > 20]
+            bullet_lines = [f'• {_re2.sub(r"^[•\\-\\*\\s]+", "", s).strip()}' for s in sents[:4]]
 
-            if '•' in raw_combined:
-                base_answer = raw_combined
-            else:
-                converted = _re.sub(r'^\d+\.\s+', '• ', raw_combined, flags=_re.MULTILINE)
-                if '•' in converted:
-                    base_answer = converted
-                else:
-                    sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_combined) if s.strip()]
-                    base_answer = '\n'.join(f'• {s}' for s in sents[:4])
+        base_answer = '\n'.join(bullet_lines) if bullet_lines else raw_answer
 
-            bullets = [line for line in base_answer.splitlines() if line.strip().startswith('•')]
-            bullets = [_clip_bullet(b) for b in bullets[:4]]
-
-            if len(bullets) < 3:
-                extra_sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', raw_answer)
-                               if len(s.strip()) > 25]
-                used_words = set()
-                for b in bullets:
-                    used_words.update(b.lower().split())
-                for sent in extra_sents:
-                    if len(bullets) >= 4:
-                        break
-                    clean = _re.sub(r'^[\s•\ -\ *\ d\ .]+', '', sent).strip()
-                    sent_words = set(clean.lower().split())
-                    if len(sent_words & used_words) > 3:
-                        continue
-                    if clean and len(clean) > 25:
-                        new_b = _clip_bullet(f'• {clean}')
-                        bullets.append(new_b)
-                        used_words.update(sent_words)
-
-            if bullets:
-                base_answer = '\n'.join(bullets)
-
-        # ── QUALITY GATE: discard any bullet that is mostly garbage ─────────────
-        # A valid bullet must have at least 5 words of length ≥ 4 characters.
+        # ── QUALITY GATE: filter clearly garbage bullets ─────────────────────────
+        # Remove any bullet that has fewer than 4 real words (≥4 chars).
+        # If fewer than 2 good bullets remain, keep the raw answer unchanged
+        # rather than clearing it — an empty string fed to Google Translate
+        # returns garbage Sinhala artifacts.
         import re as _re_qg
         def _bullet_is_meaningful(b: str) -> bool:
             words = _re_qg.findall(r'\b[a-zA-Z]{4,}\b', b)
-            return len(words) >= 5
+            return len(words) >= 4
 
         if base_answer:
-            good_bullets = [b for b in base_answer.splitlines()
-                            if not b.strip().startswith('•') or _bullet_is_meaningful(b)]
-            good_bullet_count = sum(1 for b in good_bullets if b.strip().startswith('•'))
-            if good_bullet_count < 2:
-                print(f"⚠️  Quality gate: only {good_bullet_count} meaningful bullets — answer cleared")
-                base_answer = ""
-            elif good_bullet_count < len([b for b in base_answer.splitlines() if b.strip().startswith('•')]):
-                print(f"   Quality gate: kept {good_bullet_count} good bullets")
-                base_answer = '\n'.join(good_bullets)
+            all_b = [b for b in base_answer.splitlines() if b.strip().startswith('•')]
+            good_b = [b for b in all_b if _bullet_is_meaningful(b)]
+            if len(good_b) >= 2:
+                # Keep only the good bullets (+ any non-bullet lines like intros)
+                non_bullet = [b for b in base_answer.splitlines() if not b.strip().startswith('•')]
+                base_answer = '\n'.join(non_bullet + good_b)
+                if len(good_b) < len(all_b):
+                    print(f"   Quality gate: kept {len(good_b)} of {len(all_b)} bullets")
+            else:
+                print(f"⚠️  Quality gate: only {len(good_b)} good bullets — keeping raw answer")
+                base_answer = raw_answer  # keep raw rather than going empty
 
         if not base_answer or len(base_answer.strip()) < 10:
-            print("⚠️  WARNING: Generated answer is empty after quality gate")
-            _raw = locals().get('raw_answer', '')
-            print(f"   Raw LLM output: {_raw[:300] if _raw else '[NONE]'}...")
+            print("⚠️  WARNING: Generated answer is empty — using generic fallback")
+            base_answer = ("I could not find a reliable Ayurvedic answer for your question. "
+                           "Please try rephrasing or ask about a specific herb or condition.")
 
-        print(f"✅ Generation complete! ({'flat bullets'})")
+        print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
-        print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
+        print(f"   Answer preview: {base_answer[:200]}...")
 
         # ── RECONSTRUCT: wrap raw bullets into a meaningful, user-friendly answer ──
         # Adds a context-aware intro sentence matched to the question intent (benefit /
@@ -1442,26 +1371,31 @@ class EnhancedAyurvedicRAG:
         display_answer = final_answer  # Default: English version
         
         if self.enable_translation and self.translator and detected_language == 'si':
-            # Translate the full English answer to Sinhala as a single block.
+            # Only translate if final_answer has meaningful content.
+            # An empty or near-empty string fed to Google Translate returns garbage
+            # Sinhala artifacts (e.g. "සඳහා a ලෙස භාවිතා කරන්න.").
             import re as _re_si_check
-            print(f"🔄 Translating answer to Sinhala...")
-            print(f"   [EN INPUT] {final_answer[:300]}...")  # visible in Colab for debugging
-            try:
-                _block_si = self.translator.translate_en_to_si(final_answer)
-                if _block_si and _block_si.strip():
-                    _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si))
-                    _en_len = len(final_answer.strip())
-                    _si_len = len(_block_si.strip())
-                    # Sanity check: Sinhala translation should be at least 25% as long
-                    # as English input. If it's shorter, translation was truncated/broken.
-                    if _si_char_count >= 10 and _si_len >= _en_len * 0.25:
-                        display_answer = _block_si.strip()
-                        print(f"✓ Translation complete ({_si_char_count} Sinhala chars, {_si_len} total chars)")
-                    else:
-                        print(f"⚠️  Translation too short ({_si_len} vs {_en_len} chars, "
-                              f"{_si_char_count} Sinhala chars) — keeping English")
-            except Exception as _bte:
-                print(f"⚠️  Translation failed: {_bte}")
+            if len(final_answer.strip()) < 30:
+                print("⚠️  Skipping translation — final_answer too short to translate")
+            else:
+                print(f"🔄 Translating answer to Sinhala...")
+                print(f"   [EN INPUT] {final_answer[:300]}...")  # visible in Colab for debugging
+                try:
+                    _block_si = self.translator.translate_en_to_si(final_answer)
+                    if _block_si and _block_si.strip():
+                        _si_char_count = len(_re_si_check.findall(r'[\u0D80-\u0DFF]', _block_si))
+                        _en_len = len(final_answer.strip())
+                        _si_len = len(_block_si.strip())
+                        # Sanity check: Sinhala output should be at least 25% as long as English input.
+                        # Guards against truncated/broken translation results.
+                        if _si_char_count >= 10 and _en_len > 0 and _si_len >= _en_len * 0.25:
+                            display_answer = _block_si.strip()
+                            print(f"✓ Translation complete ({_si_char_count} Sinhala chars, {_si_len} total chars)")
+                        else:
+                            print(f"⚠️  Translation too short ({_si_len} vs {_en_len} chars, "
+                                  f"{_si_char_count} Sinhala chars) — keeping English")
+                except Exception as _bte:
+                    print(f"⚠️  Translation failed: {_bte}")
 
         # Translate personalized tips to Sinhala — single block, raw output
         if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
