@@ -25,52 +25,27 @@ logger = logging.getLogger(__name__)
 # Common Sinhala words in romanized form for Singlish detection
 SINHALA_ROMANIZED_KEYWORDS = {
     # Question words
-    'mokadda', 'monawada', 'monawa', 'mokada', 'kohomada', 'kohoma',
+    'mokadda', 'monawada', 'monawa', 'mokada', 'kohomada', 'kohoma', 
     'kiyada', 'keyada', 'kawuda', 'kauda', 'kewda', 'kaudda',
     'ehenam', 'mata', 'api', 'oya', 'oyala', 'meka', 'eka', 'me',
-    'monada', 'mokakda', 'kawda',  # common shorthand variants
-
-    # Possessive / pronouns
-    'mage', 'ape', 'eya', 'eyage', 'mama',
-
-    # Pain / symptom verbs (very common in health questions)
-    'ridenawa', 'ridena', 'rida', 'arenawa', 'wedanawa',
-    'thiyenawa', 'thiyenwa', 'thiyenne', 'thiynawa',
-    'hithenawa', 'hithenne',
-
+    
     # Common Ayurvedic/Health terms
-    'leda', 'roga', 'behet', 'beheth', 'osuda', 'osuwa', 'wedakama',
-    'aushadha', 'guna', 'wala', 'karanna', 'denne',
+    'leda', 'roga', 'behet', 'osuda', 'osuwa', 'wedakama', 
+    'aushadha', 'guna', 'wala', 'thiyenawa', 'karanna', 'denne',
     'aragena', 'bonna', 'bonawa', 'gaththa', 'ganna', 'gannawa',
-
-    # Body parts
-    'oluwa', 'oluwata', 'oluwala',       # head
-    'urahisa', 'urahis', 'urahisat',    # shoulder
-    'pita', 'pitata',                   # back
-    'hela', 'helata',                   # neck
-    'kalawa', 'kalawata',               # stomach
-    'wata', 'watata',                   # back/around
-    'kapala', 'dugga', 'duggi',         # skull / forehead
-    'kakula', 'kakule',                 # leg
-    'atha', 'athe',                     # hand/arm
-    'nethra', 'nethrata',               # eye
-    'kana', 'kanata',                   # ear
-
-    # Ability / modal verbs
-    'puluwan', 'puluwanda', 'puluwanwada', 'bari',
-
+    
     # Common herbs/foods
     'kurudu', 'kaha', 'inguru', 'suduru', 'karapincha', 'goraka',
     'thippili', 'welpenela', 'komarika', 'raththran', 'venivel',
-
-    # Body/Health descriptors
-    'riha', 'sathura', 'thalapola', 'gawwa', 'linda',
+    
+    # Body/Health terms
+    'riha', 'sathura', 'thalapola', 'gawwa', 'linda', 'linda',
     'duka', 'wedana', 'hadada', 'hawa', 'una', 'seetha',
-
+    
     # Common verbs/adjectives
-    'honda', 'naraka', 'loku', 'podi', 'wadi', 'adu',
-    'denne', 'bonawa', 'kannawa', 'yanawa',
-
+    'honda', 'naraka', 'loku', 'podi', 'wadi', 'adu', 'thiyenawa',
+    'denne', 'karanna', 'ganna', 'bonawa', 'kannawa', 'yanawa',
+    
     # Particles
     'da', 'ta', 'ekka', 'nisa', 'hinda', 'walata', 'wala', 'gen',
     'ekada', 'nemei', 'nehe', 'athi', 'nathi'
@@ -112,25 +87,13 @@ SINHALA_TO_ENGLISH_DICT = {
     'ara': 'that', 'owa': 'that',
     
     # Health/Disease terms
-    'leda': 'disease', 'roga': 'disease', 'behet': 'medicine', 'beheth': 'medicine',
+    'leda': 'disease', 'roga': 'disease', 'behet': 'medicine',
     'osuda': 'medicine', 'osuwa': 'medicine', 'aushadha': 'medicine',
     'wedakama': 'treatment', 'thalapola': 'head',
     'riha': 'lungs', 'sathura': 'joints', 'gawwa': 'body',
     'hada': 'heart', 'linda': 'body',
     'duka': 'pain', 'wedana': 'pain',
-    'ridenawa': 'is hurting', 'ridena': 'hurting', 'rida': 'pain',
-    'arenawa': 'hurts', 'wedanawa': 'is painful',
     'una': 'fever', 'seetha': 'cold', 'hawa': 'cough',
-    # Body parts
-    'oluwa': 'head', 'oluwata': 'in the head',
-    'urahisa': 'shoulder', 'urahis': 'shoulder',
-    'hela': 'neck', 'kalawa': 'stomach',
-    'kakula': 'leg', 'atha': 'arm', 'pita': 'back',
-    'nethra': 'eye', 'kana': 'ear',
-    # Pronouns / possession
-    'mage': 'my', 'mama': 'I', 'ape': 'our',
-    'monada': 'what', 'puluwan': 'can', 'bari': 'cannot',
-    'thiyenawa': 'have', 'thiyenwa': 'have', 'thiyenne': 'has',
     
     # Common verbs
     'karanna': 'to do', 'karannada': 'to do',
@@ -458,19 +421,17 @@ class TranslationService:
 
         try:
             if is_romanized:
-                # For romanized Singlish, Google Translate (source='auto') gives far
-                # better results than word-by-word keyword mapping, because it
-                # understands full context (e.g. "mage oluwa ridenawa" → "my head hurts").
-                # Keyword dict is only used as a fallback if Google fails.
-                try:
-                    gt = self._google_translator(source='auto', target='en')
-                    translated = gt.translate(text)
-                    logger.info(f"Google-translated Singlish: '{text}' → '{translated}'")
-                    return translated
-                except Exception as e:
-                    logger.warning(f"Google Translate failed for Singlish, falling back to keyword dict: {e}")
-                    translated = self._translate_romanized_keywords(text)
-                    return translated
+                # Step 1: keyword dict translation
+                translated = self._translate_romanized_keywords(text)
+                # Step 2: if still looks like romanized Singlish, try Google Translate
+                if self._is_romanized_singlish(translated):
+                    try:
+                        gt = self._google_translator(source='auto', target='en')
+                        translated = gt.translate(text)
+                        logger.info(f"Google-translated Singlish: '{text}' → '{translated}'")
+                    except Exception:
+                        pass  # keep dict translation
+                return translated
             else:
                 # Sinhala Unicode → English via Google Translate
                 gt = self._google_translator(source='si', target='en')

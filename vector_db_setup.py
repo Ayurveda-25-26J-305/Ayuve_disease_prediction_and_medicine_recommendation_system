@@ -27,12 +27,9 @@ class FAISSVectorDB:
             embedding_model_name: HuggingFace model name for embeddings
             index_path: Directory to save/load FAISS index
         """
-        # Use GPU if available (much faster for bulk embedding during DB build).
-        # Falls back to CPU automatically when GPU is occupied by the LLM at query time.
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Loading embedding model: {embedding_model_name} ({device.upper()})")
-        self.embedding_model = SentenceTransformer(embedding_model_name, device=device)
+        print(f"Loading embedding model: {embedding_model_name} (CPU)")
+        # Force CPU to save GPU memory for the main LLM
+        self.embedding_model = SentenceTransformer(embedding_model_name, device="cpu")
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
         self.index_path = index_path
         
@@ -47,7 +44,7 @@ class FAISSVectorDB:
         
         print(f" FAISS Vector DB initialized (dimension: {self.embedding_dim})")
     
-    def create_embeddings(self, texts: List[str], batch_size: int = 256) -> np.ndarray:
+    def create_embeddings(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
         """
         Generate embeddings for a list of texts
         
@@ -118,8 +115,8 @@ class FAISSVectorDB:
         # Generate query embedding
         query_embedding = self.create_embeddings([query])
         
-        # Search wider candidate pool so book passages are not missed (was top_k * 3)
-        search_k = top_k * 5 if prefer_books else top_k * 2
+        # Search with more candidates if preferring books
+        search_k = top_k * 3 if prefer_books else top_k
         scores, indices = self.index.search(query_embedding, min(search_k, self.index.ntotal))
         
         # Prepare results with similarity scores
@@ -128,9 +125,9 @@ class FAISSVectorDB:
             if idx < len(self.metadata):
                 result = self.metadata[idx].copy()
                 result['score'] = float(score)
-                # IndexFlatIP returns cosine similarity directly for normalized vectors
-                # (NOT L2 distance — do NOT use 1/(1+score) here)
-                result['similarity'] = min(1.0, max(0.0, float(score)))
+                # Convert L2 distance to similarity (0-1 scale)
+                # Lower distance = higher similarity
+                result['similarity'] = 1.0 / (1.0 + float(score))
                 all_results.append(result)
         
         # If prefer_books, rerank to boost book sources

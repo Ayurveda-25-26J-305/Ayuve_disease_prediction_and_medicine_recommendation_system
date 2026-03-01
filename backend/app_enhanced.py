@@ -228,7 +228,7 @@ def ask_question():
         print(f"   Answer preview: {response['answer'][:200]}...")
         print(f"✓ Validating answer across sources...")
         print(f"✓ Answer generated")
-        print(f"  Confidence: {response.get('validation', {}).get('confidence', 'N/A')}%")
+        print(f"  Confidence: {response['validation']['confidence']}%")
         print(f"  Personalized: {response['personalized']}")
         print(f"  Citations: {len(citations)}")
         print(f"  Answer preview: {response['answer'][:100]}...")
