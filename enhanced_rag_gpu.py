@@ -565,21 +565,34 @@ Related Question: {question}
         # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
         base_answer = raw_answer.strip()
 
-        # Strip LLM-generated preamble and suffix
+        # Strip LLM-generated preamble and trailing boilerplate
         import re as _re
-        # Remove common preamble patterns (with optional bullets after colon)
-        base_answer = _re.sub(
-            r'^(ayurveda provides[^\n]*?:\s*[•\-\*]?\s*|'
-            r'based on the (?:sources|context)[^\n]*?:\s*[•\-\*]?\s*|'
-            r'according to (?:the )?(?:sources|ayurveda)[^\n]*?:\s*[•\-\*]?\s*|'
-            r'here (?:is|are)[^\n]*?:\s*[•\-\*]?\s*)',
-            '', base_answer, flags=_re.IGNORECASE
-        ).strip()
-        # Remove trailing boilerplate suffix the model sometimes appends
-        base_answer = _re.sub(
-            r'\n?follow these ayurvedic guidelines[^\n]*\.?\s*$',
-            '', base_answer, flags=_re.IGNORECASE
-        ).strip()
+        # Strategy: if the first line ends with ':' OR contains a known preamble phrase,
+        # drop everything up to and including that line (handles "Ayurveda provides...: •")
+        lines = base_answer.split('\n')
+        _preamble_phrases = [
+            'ayurveda provides', 'based on the sources', 'based on the context',
+            'according to the sources', 'according to ayurveda', 'here are',
+            'here is', 'health insights', 'following health', 'for your question',
+            'follow these ayurvedic guidelines', 'these ayurvedic guidelines'
+        ]
+        # Remove leading lines that are preamble
+        while lines:
+            first = lines[0].lower().strip()
+            if any(phrase in first for phrase in _preamble_phrases) or first.endswith(':'):
+                lines.pop(0)
+            else:
+                break
+        # Remove trailing boilerplate line
+        while lines:
+            last = lines[-1].lower().strip()
+            if any(phrase in last for phrase in ['follow these', 'guidelines consistently', 'safe and effective']):
+                lines.pop()
+            else:
+                break
+        base_answer = '\n'.join(lines).strip()
+        # Also strip any leading bullet/dash left after preamble removal
+        base_answer = _re.sub(r'^[\u2022\-\*]\s*', '', base_answer).strip()
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
