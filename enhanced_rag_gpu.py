@@ -507,7 +507,17 @@ Related Question: {question}
         # Retrieve documents with similarity scores (prefer book sources)
         # Note: Always search in English since database is in English
         print("🔍 Retrieving relevant sources...")
-        retrieved_docs = vector_db.search(question, top_k=validation_top_k, prefer_books=True)
+        # Build a targeted search query — if asking about benefits/uses, add context
+        # so the vector search finds health-content chunks rather than book index pages
+        search_query = question
+        benefit_signals = [
+            'benefit', 'use', 'good for', 'help', 'treat', 'property',
+            'guna', 'effect', 'cure', 'purpose', 'health', 'medicinal'
+        ]
+        if any(w in question.lower() for w in benefit_signals):
+            search_query = question + " health benefits medicinal properties"
+            print(f"🎯 Enhanced search query: {search_query[:120]}...")
+        retrieved_docs = vector_db.search(search_query, top_k=validation_top_k, prefer_books=True)
         
         # Ensure we have book sources for better citations
         book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
@@ -526,8 +536,8 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Fixed token budget — 150 is enough for 3-5 bullet points
-        dynamic_tokens = 150
+        # Token budget — 200 gives room for 3-4 clean bullet points
+        dynamic_tokens = 200
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -536,23 +546,28 @@ Related Question: {question}
         
         # Build messages — use generate_from_messages() so special tokens are
         # encoded directly and never corrupted by a string round-trip.
-        context_summary = context_text[:600]  # ~150 tokens of context
+        context_summary = context_text[:800]  # ~200 tokens of context
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are an Ayurvedic knowledge assistant. "
-                    "Answer questions directly using only the provided sources. "
-                    "Do NOT start your answer with phrases like 'Ayurveda provides', 'Based on the sources', or 'According to'. "
-                    "Do NOT end with 'Follow these guidelines' or similar closings. "
-                    "Just give the answer directly in 2-3 sentences."
+                    "You are an Ayurvedic health assistant. "
+                    "Your job: read the sources and list specific health benefits, uses, or facts. "
+                    "Format: exactly 3 bullet points using the • symbol. "
+                    "Each bullet = one clear, specific benefit or use in one sentence. "
+                    "IMPORTANT: Ignore any book titles, chapter names, verse numbers, "
+                    "or table-of-contents text you see in the sources — only extract health facts. "
+                    "Do NOT mention book names or source references in your answer. "
+                    "Do NOT start with 'Ayurveda provides', 'Based on', or 'According to'. "
+                    "Do NOT end with 'Follow these guidelines' or similar closings."
                 )
             },
             {
                 "role": "user",
                 "content": (
                     f"Sources:\n{context_summary}\n\n"
-                    f"Question: {question}"
+                    f"Question: {question}\n\n"
+                    f"List 3 specific health benefits or uses that directly answer this question."
                 )
             }
         ]
