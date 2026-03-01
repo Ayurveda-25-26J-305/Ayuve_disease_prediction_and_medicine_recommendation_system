@@ -469,7 +469,33 @@ Related Question: {question}
             ]
             tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
             tips = tips.strip()
-            print(f"✓ Tips generated: {tips[:100]}...")
+
+            # ── Truncate tips at garbage markers ─────────────────────────────
+            import re as _re
+            _garbage_markers = ['<|', '/////', '**', 'hencefortieth', 'unambiguously', 'congruently']
+            for marker in _garbage_markers:
+                idx = tips.find(marker)
+                if idx != -1:
+                    tips = tips[:idx].strip()
+
+            # ── Extract clean numbered/bulleted points, max 3, max 120 chars each ──
+            # Split on numbered list markers or bullet markers
+            items = _re.split(r'\n?(?:\d+\.\s+|[-\u2022]\s+)', tips)
+            items = [i.strip() for i in items if i.strip() and len(i.strip()) > 15]
+            clean_tips = []
+            for item in items[:3]:
+                # Take only the first 1-2 sentences (up to first double-period or 2nd sentence end)
+                sentences = _re.split(r'\.(?=\s+[A-Z])', item)
+                short = sentences[0].strip()
+                if len(sentences) > 1 and len(short) < 60:
+                    short = (short + '. ' + sentences[1].strip()).strip()
+                # Hard cap at 150 chars
+                if len(short) > 150:
+                    short = short[:150].rsplit(' ', 1)[0]
+                short = short.rstrip('.') + '.'
+                clean_tips.append(short)
+            tips = '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips)) if clean_tips else tips[:300]
+
             return tips
         except Exception as e:
             print(f"⚠️  Tip generation failed: {e}")
@@ -580,48 +606,76 @@ Related Question: {question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        # Use raw answer directly — _format_answer was converting paragraphs to broken bullets
-        base_answer = raw_answer.strip()
-
-        # Strip LLM-generated preamble and trailing boilerplate
         import re as _re
+
+        # ── Step 1: Truncate at known garbage/hallucination markers ──────────
+        _garbage_markers = [
+            '<|', '/////', '**Answer', '**Based', '(@', '#health', '#ayur',
+            'hencefortieth', 'herewith delimited', 'contiguous cess',
+            'particularities pertaining', 'unambiguously', 'congruently ensued',
+        ]
+        clean_text = raw_answer
+        for marker in _garbage_markers:
+            idx = clean_text.find(marker)
+            if idx != -1:
+                clean_text = clean_text[:idx]
+        clean_text = clean_text.strip()
+
+        # ── Step 2: Remove LLM preamble lines ────────────────────────────────
         _preamble_phrases = [
             'ayurveda provides', 'based on the sources', 'based on the context',
-            'according to the sources', 'according to ayurveda', 'here are',
-            'here is', 'health insights', 'following health', 'for your question',
-            'follow these ayurvedic guidelines', 'these ayurvedic guidelines'
+            'according to the sources', 'according to ayurveda',
+            'health insights', 'following health', 'for your question',
+            'follow these ayurvedic guidelines', 'these ayurvedic guidelines',
+            'here are the', 'here are 3', 'here is'
         ]
-        _trailing_phrases = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
-
-        lines = base_answer.split('\n')
-
-        # Remove / trim leading preamble lines
+        lines = clean_text.split('\n')
         while lines:
             first = lines[0].lower().strip()
-            if any(phrase in first for phrase in _preamble_phrases) or first.endswith(':'):
-                # If there is real content after a colon on the same line, keep that part
+            if any(phrase in first for phrase in _preamble_phrases) or (first.endswith(':') and len(first) < 120):
                 colon_idx = lines[0].find(':')
                 after_colon = lines[0][colon_idx + 1:].strip() if colon_idx != -1 else ''
-                # Strip leading bullet from rescued content
                 after_colon = _re.sub(r'^[\u2022\-\*]\s*', '', after_colon).strip()
                 lines.pop(0)
                 if after_colon and len(after_colon) > 15:
-                    lines.insert(0, after_colon)  # put rescued content back at front
-                    break  # content found, stop stripping
+                    lines.insert(0, after_colon)
+                    break
             else:
                 break
 
-        # Remove trailing boilerplate lines
-        while lines:
-            last = lines[-1].lower().strip()
-            if any(phrase in last for phrase in _trailing_phrases):
-                lines.pop()
-            else:
+        # ── Step 3: Build clean bullet-point answer (max 3 points) ───────────
+        bullet_points = []
+        for line in lines:
+            # Split line by sentence boundaries to separate multiple facts
+            line = line.strip()
+            if not line:
+                continue
+            # Strip existing bullet markers
+            line = _re.sub(r'^[\u2022\-\*\d\.]+\s*', '', line).strip()
+            if len(line) < 20:
+                continue
+            # Split into sentences at period/exclamation followed by capital or end
+            sentences = _re.split(r'\.(?=\s+[A-Z]|\.\s|$)', line)
+            for sent in sentences:
+                sent = sent.strip().rstrip('.')
+                if len(sent) > 25:
+                    # Truncate run-on sentences at 160 chars
+                    if len(sent) > 160:
+                        # Cut at last space before 160
+                        sent = sent[:160].rsplit(' ', 1)[0]
+                    bullet_points.append('\u2022 ' + sent + '.')
+                if len(bullet_points) >= 3:
+                    break
+            if len(bullet_points) >= 3:
                 break
 
-        base_answer = '\n'.join(lines).strip()
-        # Strip any stray leading bullet left over
-        base_answer = _re.sub(r'^[\u2022\-\*]\s*', '', base_answer).strip()
+        # Remove trailing boilerplate bullets
+        _trailing_phrases = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
+        bullet_points = [b for b in bullet_points if not any(p in b.lower() for p in _trailing_phrases)]
+
+        base_answer = '\n'.join(bullet_points[:3]).strip()
+        if not base_answer:
+            base_answer = clean_text[:300].strip()  # fallback: raw truncated text
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
