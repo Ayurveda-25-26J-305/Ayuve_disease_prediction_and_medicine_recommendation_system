@@ -565,7 +565,7 @@ Related Question: {question}
         if not base_answer or len(base_answer.strip()) < 10:
             print("⚠️  WARNING: Generated answer is empty or too short!")
             print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
-            print(f"   Prompt used: {prompt[:500]}...")
+            print(f"   Messages used: {str(messages)[:300]}...")
         
         # Validate
         validation_result = None
