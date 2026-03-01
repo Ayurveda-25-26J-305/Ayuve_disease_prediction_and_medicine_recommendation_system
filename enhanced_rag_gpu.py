@@ -470,31 +470,38 @@ Related Question: {question}
             tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
             tips = tips.strip()
 
-            # ── Truncate tips at garbage markers ─────────────────────────────
             import re as _re
-            _garbage_markers = ['<|', '/////', '**', 'hencefortieth', 'unambiguously', 'congruently']
-            for marker in _garbage_markers:
-                idx = tips.find(marker)
-                if idx != -1:
-                    tips = tips[:idx].strip()
+            # Strip tips preamble like "Certainly! Here's...", "Sure! Here are..."
+            _tips_preamble = _re.compile(
+                r'^(certainly!?|sure!?|of course!?|here.{0,20}(are|is)|great!?).*?\n',
+                _re.IGNORECASE
+            )
+            tips = _tips_preamble.sub('', tips).strip()
 
-            # ── Extract clean numbered/bulleted points, max 3, max 120 chars each ──
-            # Split on numbered list markers or bullet markers
-            items = _re.split(r'\n?(?:\d+\.\s+|[-\u2022]\s+)', tips)
+            # Garbage pattern for tips
+            _garbage_re = _re.compile(
+                r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously'
+            )
+
+            # Split on numbered/bullet markers
+            items = _re.split(r'\n?(?:\d+\.\s+|[-•]\s+)', tips)
             items = [i.strip() for i in items if i.strip() and len(i.strip()) > 15]
             clean_tips = []
             for item in items[:3]:
-                # Take only the first 1-2 sentences (up to first double-period or 2nd sentence end)
+                # Skip garbage items
+                if _garbage_re.search(item):
+                    continue
+                # Keep only first sentence
                 sentences = _re.split(r'\.(?=\s+[A-Z])', item)
                 short = sentences[0].strip()
-                if len(sentences) > 1 and len(short) < 60:
-                    short = (short + '. ' + sentences[1].strip()).strip()
-                # Hard cap at 150 chars
+                if len(sentences) > 1 and len(short) < 50:
+                    short = short + '. ' + sentences[1].strip()
                 if len(short) > 150:
                     short = short[:150].rsplit(' ', 1)[0]
                 short = short.rstrip('.') + '.'
-                clean_tips.append(short)
-            tips = '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips)) if clean_tips else tips[:300]
+                if len(short) > 20:
+                    clean_tips.append(short)
+            tips = '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips)) if clean_tips else ''
 
             return tips
         except Exception as e:
@@ -608,74 +615,61 @@ Related Question: {question}
 
         import re as _re
 
-        # ── Step 1: Truncate at known garbage/hallucination markers ──────────
-        _garbage_markers = [
-            '<|', '/////', '**Answer', '**Based', '(@', '#health', '#ayur',
-            'hencefortieth', 'herewith delimited', 'contiguous cess',
-            'particularities pertaining', 'unambiguously', 'congruently ensued',
-        ]
-        clean_text = raw_answer
-        for marker in _garbage_markers:
-            idx = clean_text.find(marker)
-            if idx != -1:
-                clean_text = clean_text[:idx]
-        clean_text = clean_text.strip()
+        # Garbage pattern: catches _RNSERVED, _POTENTIALLY, <|token|>, /////, **CAPS
+        _garbage_re = _re.compile(
+            r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
+            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY'
+        )
 
-        # ── Step 2: Remove LLM preamble lines ────────────────────────────────
+        def _extract_clean_sentences(text, max_s=3):
+            """Extract complete sentences that are not corrupted."""
+            # Find all complete sentences (capital start, ends with . ! ?)
+            candidates = _re.findall(r'[A-Z][^.!?<\n]{20,230}[.!?]', text)
+            out = []
+            for s in candidates:
+                s = s.strip()
+                if _garbage_re.search(s):
+                    continue  # skip corrupted sentence
+                # Truncate at 160 chars on word boundary
+                if len(s) > 160:
+                    s = s[:160].rsplit(' ', 1)[0].rstrip(',') + '.'
+                out.append('\u2022 ' + s)
+                if len(out) >= max_s:
+                    break
+            return out
+
+        # Strip LLM preamble lines
         _preamble_phrases = [
             'ayurveda provides', 'based on the sources', 'based on the context',
             'according to the sources', 'according to ayurveda',
             'health insights', 'following health', 'for your question',
-            'follow these ayurvedic guidelines', 'these ayurvedic guidelines',
-            'here are the', 'here are 3', 'here is'
+            'follow these ayurvedic guidelines', 'here are the', 'here are 3', 'here is'
         ]
-        lines = clean_text.split('\n')
-        while lines:
-            first = lines[0].lower().strip()
-            if any(phrase in first for phrase in _preamble_phrases) or (first.endswith(':') and len(first) < 120):
-                colon_idx = lines[0].find(':')
-                after_colon = lines[0][colon_idx + 1:].strip() if colon_idx != -1 else ''
-                after_colon = _re.sub(r'^[\u2022\-\*]\s*', '', after_colon).strip()
-                lines.pop(0)
-                if after_colon and len(after_colon) > 15:
-                    lines.insert(0, after_colon)
+        raw_lines = raw_answer.strip().split('\n')
+        while raw_lines:
+            first = raw_lines[0].lower().strip()
+            if any(p in first for p in _preamble_phrases) or (first.endswith(':') and len(first) < 120):
+                colon_idx = raw_lines[0].find(':')
+                after = raw_lines[0][colon_idx+1:].strip() if colon_idx != -1 else ''
+                raw_lines.pop(0)
+                if after and len(after) > 15:
+                    raw_lines.insert(0, after)
                     break
             else:
                 break
+        clean_text = ' '.join(raw_lines)
 
-        # ── Step 3: Build clean bullet-point answer (max 3 points) ───────────
-        bullet_points = []
-        for line in lines:
-            # Split line by sentence boundaries to separate multiple facts
-            line = line.strip()
-            if not line:
-                continue
-            # Strip existing bullet markers
-            line = _re.sub(r'^[\u2022\-\*\d\.]+\s*', '', line).strip()
-            if len(line) < 20:
-                continue
-            # Split into sentences at period/exclamation followed by capital or end
-            sentences = _re.split(r'\.(?=\s+[A-Z]|\.\s|$)', line)
-            for sent in sentences:
-                sent = sent.strip().rstrip('.')
-                if len(sent) > 25:
-                    # Truncate run-on sentences at 160 chars
-                    if len(sent) > 160:
-                        # Cut at last space before 160
-                        sent = sent[:160].rsplit(' ', 1)[0]
-                    bullet_points.append('\u2022 ' + sent + '.')
-                if len(bullet_points) >= 3:
-                    break
-            if len(bullet_points) >= 3:
-                break
+        # Extract up to 3 clean bullet points
+        bullet_points = _extract_clean_sentences(clean_text, max_s=3)
 
-        # Remove trailing boilerplate bullets
-        _trailing_phrases = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
-        bullet_points = [b for b in bullet_points if not any(p in b.lower() for p in _trailing_phrases)]
+        # Remove trailing boilerplate
+        _trailing = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
+        bullet_points = [b for b in bullet_points if not any(p in b.lower() for p in _trailing)]
 
         base_answer = '\n'.join(bullet_points[:3]).strip()
+        # Fallback: first 200 chars of raw text (ASCII + Sinhala only)
         if not base_answer:
-            base_answer = clean_text[:300].strip()  # fallback: raw truncated text
+            base_answer = _re.sub(r'[^\x20-\x7E\u0D80-\u0DFF\s]', '', raw_answer).strip()[:200]
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
