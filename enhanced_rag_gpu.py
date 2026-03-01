@@ -446,64 +446,76 @@ Related Question: {question}
 
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str) -> str:
         """
-        Generate 2-3 short personalized tips relevant to the question/answer context,
-        tailored to the detected dosha. Tips must be different from the answer.
+        Generate 3 short personalized tips relevant to the question topic,
+        tailored to the detected dosha. Tips must be in plain English sentences.
         """
         print(f"💡 Generating personalized tips for {dosha} dosha...")
         try:
-            # Extract a short topic label from the answer for grounding tips
-            topic_preview = answer[:200].strip()
-            prompt = (
-                f"Topic: {question}\n"
-                f"Context: {topic_preview}\n\n"
-                f"Give exactly 3 short, practical Ayurvedic tips that are DIRECTLY about "
-                f"this specific topic ({question}). "
-                f"Each tip must mention the specific herb, food, or remedy from the topic. "
-                f"Tailor the tips for a {dosha} dosha constitution. "
-                f"Do NOT give generic lifestyle advice. "
-                f"Format as a numbered list. Each tip in 1-2 sentences."
-            )
-            messages = [
-                {"role": "system", "content": "You are an Ayurvedic expert. Give specific, practical tips directly related to the topic asked."},
-                {"role": "user", "content": prompt}
-            ]
-            tips = self.llm.generate_from_messages(messages, max_new_tokens=180)
-            tips = tips.strip()
-
             import re as _re
-            # Strip tips preamble like "Certainly! Here's...", "Sure! Here are..."
-            _tips_preamble = _re.compile(
-                r'^(certainly!?|sure!?|of course!?|here.{0,20}(are|is)|great!?).*?\n',
-                _re.IGNORECASE
-            )
-            tips = _tips_preamble.sub('', tips).strip()
 
-            # Garbage pattern for tips
+            # Build a tight, constrained prompt
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an Ayurvedic health advisor. "
+                        "Write ONLY in plain English. "
+                        "NO Sanskrit words, NO headings, NO markdown (no ### or **). "
+                        "Each tip must start directly with an action verb like "
+                        "'Add', 'Use', 'Drink', 'Apply', 'Include', 'Take'. "
+                        "Each tip is ONE sentence, max 20 words."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {question}\n"
+                        f"Write 3 practical tips about {question} for a {dosha} dosha person.\n"
+                        f"Format:\n1. [tip]\n2. [tip]\n3. [tip]"
+                    )
+                }
+            ]
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
+            raw_tips = raw_tips.strip()
+
+            # Garbage pattern — Sanskrit transliteration, markdown, special tokens
             _garbage_re = _re.compile(
-                r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously'
+                r'_[A-Z]{2,}|<\||/{3,}|#{1,3}\s|'
+                r'[a-z]{4,}(ya|na|ha|va|sha|tha|dha|cha){2,}[a-z]+'  # Sanskrit-like
             )
 
-            # Split on numbered/bullet markers
-            items = _re.split(r'\n?(?:\d+\.\s+|[-•]\s+)', tips)
+            # Strip meta-intro lines ("Certainly!", "Here are your tips:", etc.)
+            lines = raw_tips.split('\n')
+            lines = [l for l in lines if not _re.match(
+                r'^\s*(certainly|sure|here|great|of course|tip|note)[^a-z]',
+                l, _re.IGNORECASE
+            )]
+
+            # Extract numbered items
+            joined = '\n'.join(lines)
+            items = _re.split(r'\n?\d+\.\s+', joined)
             items = [i.strip() for i in items if i.strip() and len(i.strip()) > 15]
+
             clean_tips = []
             for item in items[:3]:
                 # Skip garbage items
                 if _garbage_re.search(item):
                     continue
-                # Keep only first sentence
-                sentences = _re.split(r'\.(?=\s+[A-Z])', item)
-                short = sentences[0].strip()
-                if len(sentences) > 1 and len(short) < 50:
-                    short = short + '. ' + sentences[1].strip()
-                if len(short) > 150:
-                    short = short[:150].rsplit(' ', 1)[0]
-                short = short.rstrip('.') + '.'
-                if len(short) > 20:
-                    clean_tips.append(short)
-            tips = '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips)) if clean_tips else ''
+                # Take only first sentence
+                first_sent = _re.split(r'\.(?=\s+[A-Z])', item)[0].strip()
+                # Hard cap at 150 chars
+                if len(first_sent) > 150:
+                    first_sent = first_sent[:150].rsplit(' ', 1)[0]
+                first_sent = first_sent.rstrip('.') + '.'
+                if len(first_sent) > 20:
+                    clean_tips.append(first_sent)
 
-            return tips
+            if not clean_tips:
+                return ""
+
+            print(f"✓ Tips generated: {len(clean_tips)} tips")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips))
+
         except Exception as e:
             print(f"⚠️  Tip generation failed: {e}")
             return ""
