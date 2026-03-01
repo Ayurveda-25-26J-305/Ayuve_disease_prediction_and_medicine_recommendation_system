@@ -446,75 +446,107 @@ Related Question: {question}
 
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str) -> str:
         """
-        Generate 3 short personalized tips relevant to the question topic,
-        tailored to the detected dosha. Tips must be in plain English sentences.
+        Generate 3 personalised Ayurvedic tips relevant to the question topic,
+        tailored to the detected dosha. Tips are plain English sentences.
         """
-        print(f"💡 Generating personalized tips for {dosha} dosha...")
+        print(f"💡 Generating personalised tips for {dosha} dosha...")
         try:
             import re as _re
 
-            # Build a tight, constrained prompt
             messages = [
                 {
                     "role": "system",
                     "content": (
-                        "You are an Ayurvedic health advisor. "
+                        "You are a helpful Ayurvedic health advisor. "
                         "Write ONLY in plain English. "
-                        "NO Sanskrit words, NO headings, NO markdown (no ### or **). "
-                        "Each tip must start directly with an action verb like "
-                        "'Add', 'Use', 'Drink', 'Apply', 'Include', 'Take'. "
-                        "Each tip is ONE sentence, max 20 words."
+                        "Do NOT use Sanskrit transliteration, headings, or markdown symbols like ### or **. "
+                        "Give exactly 3 numbered practical tips. "
+                        "Each tip is one sentence that starts with an action verb "
+                        "(Add, Drink, Use, Apply, Include, Take, Eat, Avoid, Combine, Mix). "
+                        "Maximum 25 words per tip."
                     )
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Question: {question}\n"
-                        f"Write 3 practical tips about {question} for a {dosha} dosha person.\n"
-                        f"Format:\n1. [tip]\n2. [tip]\n3. [tip]"
+                        f"Topic: {question}\n"
+                        f"Dosha: {dosha}\n\n"
+                        f"Give 3 practical Ayurvedic tips about the topic above for a {dosha} dosha person.\n"
+                        f"1. \n2. \n3. "
                     )
                 }
             ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=150)
+            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=250)
             raw_tips = raw_tips.strip()
+            print(f"🔎 Raw tips: {raw_tips[:300]}")
 
-            # Garbage pattern — Sanskrit transliteration, markdown, special tokens
+            # Only flag truly corrupt content — NOT normal English words
             _garbage_re = _re.compile(
-                r'_[A-Z]{2,}|<\||/{3,}|#{1,3}\s|'
-                r'[a-z]{4,}(ya|na|ha|va|sha|tha|dha|cha){2,}[a-z]+'  # Sanskrit-like
+                r'_[A-Z]{2,}|<\||/{3,}|\*{2,}[A-Z]|'
+                r'#{1,3}\s|'
+                r'(?:[a-z]{3,}(?:ya|sha|tha|dha|cha)[a-z]*){3,}'  # 3+ Sanskrit-suffix clusters back-to-back
             )
 
-            # Strip meta-intro lines ("Certainly!", "Here are your tips:", etc.)
+            # Strip pure intro/meta lines
             lines = raw_tips.split('\n')
-            lines = [l for l in lines if not _re.match(
-                r'^\s*(certainly|sure|here|great|of course|tip|note)[^a-z]',
-                l, _re.IGNORECASE
-            )]
-
-            # Extract numbered items
-            joined = '\n'.join(lines)
-            items = _re.split(r'\n?\d+\.\s+', joined)
-            items = [i.strip() for i in items if i.strip() and len(i.strip()) > 15]
-
-            clean_tips = []
-            for item in items[:3]:
-                # Skip garbage items
-                if _garbage_re.search(item):
+            content_lines = []
+            for line in lines:
+                s = line.strip()
+                if not s:
                     continue
-                # Take only first sentence
-                first_sent = _re.split(r'\.(?=\s+[A-Z])', item)[0].strip()
-                # Hard cap at 150 chars
-                if len(first_sent) > 150:
-                    first_sent = first_sent[:150].rsplit(' ', 1)[0]
-                first_sent = first_sent.rstrip('.') + '.'
-                if len(first_sent) > 20:
-                    clean_tips.append(first_sent)
+                if _re.match(
+                    r'^(certainly|sure|here are|here is|great|of course|note:|tip:|#)',
+                    s, _re.IGNORECASE
+                ):
+                    continue
+                content_lines.append(s)
 
-            if not clean_tips:
-                return ""
+            full_text = '\n'.join(content_lines)
 
-            print(f"✓ Tips generated: {len(clean_tips)} tips")
-            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(clean_tips))
+            # --- Primary: split on numbered list markers (1. / 1) / 1:) ---
+            numbered = _re.split(r'(?m)^\s*\d+[\.\)]\s*', full_text)
+            candidates = [t.strip() for t in numbered if len(t.strip()) > 10]
+
+            # --- Fallback: line-by-line, strip bullet chars ---
+            if len(candidates) < 2:
+                candidates = [
+                    _re.sub(r'^[-•*]\s*', '', ln).strip()
+                    for ln in content_lines
+                ]
+                candidates = [c for c in candidates if len(c) > 10]
+
+            tips = []
+            for item in candidates[:6]:  # check up to 6, keep best 3
+                if _garbage_re.search(item):
+                    print(f"  ⚠ Skipped (garbage): {item[:60]}")
+                    continue
+                # Take first sentence only (split at sentence boundary before next capital)
+                first_sent = _re.split(r'(?<=[.!?])\s+(?=[A-Z])', item)[0].strip()
+                first_sent = _re.sub(r'\s+', ' ', first_sent)
+                if len(first_sent) > 200:
+                    first_sent = first_sent[:200].rsplit(' ', 1)[0]
+                first_sent = first_sent.rstrip('.!?,;') + '.'
+                if len(first_sent) > 10:
+                    tips.append(first_sent)
+                if len(tips) >= 3:
+                    break
+
+            # --- Template fallback: never return empty tips ---
+            if not tips:
+                print("⚠ All tips filtered — using topic-based fallback")
+                # Extract a short topic keyword from the question
+                topic = _re.sub(
+                    r'^(what are the benefits of|what is|how does|benefits of)\s*',
+                    '', question.lower(), flags=_re.IGNORECASE
+                ).strip().strip('?').strip()
+                tips = [
+                    f"Include {topic} regularly in your daily diet to support overall health for {dosha} dosha.",
+                    f"Use {topic} in warm preparations such as herbal teas or soups for better absorption.",
+                    f"Consult an Ayurvedic practitioner to determine the right dosage and timing for {topic}."
+                ]
+
+            print(f"✓ Tips generated: {len(tips)} tips")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
         except Exception as e:
             print(f"⚠️  Tip generation failed: {e}")
@@ -584,8 +616,8 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Token budget — 200 gives room for 3-4 clean bullet points
-        dynamic_tokens = 200
+        # Token budget — 300 gives room for 3 complete bullet points with context
+        dynamic_tokens = 300
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -627,30 +659,13 @@ Related Question: {question}
 
         import re as _re
 
-        # Garbage pattern: catches _RNSERVED, _POTENTIALLY, <|token|>, /////, **CAPS
+        # Garbage / corruption pattern
         _garbage_re = _re.compile(
             r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
             r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY'
         )
 
-        def _extract_clean_sentences(text, max_s=3):
-            """Extract complete sentences that are not corrupted."""
-            # Find all complete sentences (capital start, ends with . ! ?)
-            candidates = _re.findall(r'[A-Z][^.!?<\n]{20,230}[.!?]', text)
-            out = []
-            for s in candidates:
-                s = s.strip()
-                if _garbage_re.search(s):
-                    continue  # skip corrupted sentence
-                # Truncate at 160 chars on word boundary
-                if len(s) > 160:
-                    s = s[:160].rsplit(' ', 1)[0].rstrip(',') + '.'
-                out.append('\u2022 ' + s)
-                if len(out) >= max_s:
-                    break
-            return out
-
-        # Strip LLM preamble lines
+        # --- Step 1: Strip LLM preamble lines ---
         _preamble_phrases = [
             'ayurveda provides', 'based on the sources', 'based on the context',
             'according to the sources', 'according to ayurveda',
@@ -669,14 +684,53 @@ Related Question: {question}
                     break
             else:
                 break
-        clean_text = ' '.join(raw_lines)
 
-        # Extract up to 3 clean bullet points
-        bullet_points = _extract_clean_sentences(clean_text, max_s=3)
+        # --- Step 2: Bullet-first extraction (• lines the model was asked to produce) ---
+        def _clean_bullet_line(line):
+            """Return cleaned sentence from a bullet line, or None if garbage."""
+            # Strip leading bullet characters and whitespace
+            text = _re.sub(r'^[•\-\*]\s*', '', line).strip()
+            if len(text) < 20:
+                return None
+            if _garbage_re.search(text):
+                return None
+            # Remove trailing boilerplate
+            _trailing = ['follow these', 'guidelines consistently', 'safe and effective']
+            if any(p in text.lower() for p in _trailing):
+                return None
+            # Truncate at 180 chars on word boundary
+            if len(text) > 180:
+                text = text[:180].rsplit(' ', 1)[0].rstrip(',;')
+            text = text.rstrip('.!?') + '.'
+            return '\u2022 ' + text
 
-        # Remove trailing boilerplate
-        _trailing = ['follow these', 'guidelines consistently', 'safe and effective', 'always use']
-        bullet_points = [b for b in bullet_points if not any(p in b.lower() for p in _trailing)]
+        bullet_points = []
+        for line in raw_lines:
+            stripped = line.strip()
+            if stripped.startswith(('•', '-', '*')) and len(stripped) > 5:
+                cleaned = _clean_bullet_line(stripped)
+                if cleaned:
+                    bullet_points.append(cleaned)
+            if len(bullet_points) >= 3:
+                break
+
+        # --- Step 3: Fallback — sentence extractor if bullets not found ---
+        if len(bullet_points) < 2:
+            clean_text = ' '.join(raw_lines)
+            # Find sentences that start with capital, are 25–200 chars, end with punctuation
+            candidates = _re.findall(r'[A-Z][^.!?<\n]{25,200}[.!?]', clean_text)
+            for s in candidates:
+                s = s.strip()
+                if _garbage_re.search(s):
+                    continue
+                if len(s) > 180:
+                    s = s[:180].rsplit(' ', 1)[0].rstrip(',;') + '.'
+                _trailing = ['follow these', 'guidelines consistently', 'safe and effective']
+                if any(p in s.lower() for p in _trailing):
+                    continue
+                bullet_points.append('\u2022 ' + s)
+                if len(bullet_points) >= 3:
+                    break
 
         base_answer = '\n'.join(bullet_points[:3]).strip()
         # Fallback: first 200 chars of raw text (ASCII + Sinhala only)
