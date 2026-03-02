@@ -446,111 +446,61 @@ Related Question: {question}
 
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str) -> str:
         """
-        Generate 3 personalised Ayurvedic tips relevant to the question topic,
-        tailored to the detected dosha. Tips are plain English sentences.
+        Generate 3 reliable dosha-specific Ayurvedic tips using templates.
+        No LLM call — pure template system guarantees clean, relevant output.
         """
-        print(f"💡 Generating personalised tips for {dosha} dosha...")
-        try:
-            import re as _re
+        import re as _re
+        print(f"💡 Generating template tips for {dosha} dosha...")
 
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful Ayurvedic health advisor. "
-                        "Write ONLY in plain English. "
-                        "Do NOT use Sanskrit transliteration, headings, or markdown symbols like ### or **. "
-                        "Give exactly 3 numbered practical tips. "
-                        "Each tip is one sentence that starts with an action verb "
-                        "(Add, Drink, Use, Apply, Include, Take, Eat, Avoid, Combine, Mix). "
-                        "Maximum 25 words per tip."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Topic: {question}\n"
-                        f"Dosha: {dosha}\n\n"
-                        f"Give 3 practical Ayurvedic tips about the topic above for a {dosha} dosha person.\n"
-                        f"1. \n2. \n3. "
-                    )
-                }
-            ]
-            raw_tips = self.llm.generate_from_messages(messages, max_new_tokens=250)
-            raw_tips = raw_tips.strip()
-            print(f"🔎 Raw tips: {raw_tips[:300]}")
+        # --- Extract a clean topic keyword from the question ---
+        topic_raw = _re.sub(
+            r'^(what are the benefits of|what are the uses of|what is the use of|'
+            r'what is|how does|benefits of|uses of|properties of|'
+            r'tell me about|explain|describe)\s+',
+            '', question.lower(), flags=_re.IGNORECASE
+        ).strip().strip('?').strip()
 
-            # Only flag truly corrupt content — NOT normal English words
-            _garbage_re = _re.compile(
-                r'_[A-Z]{2,}|<\||/{3,}|\*{2,}[A-Z]|'
-                r'#{1,3}\s|'
-                r'(?:[a-z]{3,}(?:ya|sha|tha|dha|cha)[a-z]*){3,}'  # 3+ Sanskrit-suffix clusters back-to-back
-            )
+        # Remove trailing filler words
+        topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body)$', '', topic_raw).strip()
 
-            # Strip pure intro/meta lines
-            lines = raw_tips.split('\n')
-            content_lines = []
-            for line in lines:
-                s = line.strip()
-                if not s:
-                    continue
-                if _re.match(
-                    r'^(certainly|sure|here are|here is|great|of course|note:|tip:|#)',
-                    s, _re.IGNORECASE
-                ):
-                    continue
-                content_lines.append(s)
+        # Capitalize nicely (handles multi-word topics)
+        topic = topic_raw.title() if topic_raw else question.strip('?').strip()
+        topic_low = topic_raw if topic_raw else question.lower().strip('?').strip()
 
-            full_text = '\n'.join(content_lines)
+        # --- Dosha-specific tip templates ---
+        templates = {
+            'Vata': [
+                f"Use {topic} with warm ghee or sesame oil to ground Vata and improve absorption.",
+                f"Take {topic} at the same time each day — consistency is key for balancing Vata's irregular nature.",
+                f"Combine {topic} with warming spices like ginger or black pepper to enhance its effectiveness for Vata.",
+            ],
+            'Pitta': [
+                f"Use {topic} in moderate amounts alongside cooling foods like coconut milk to prevent Pitta overheating.",
+                f"Avoid taking {topic} during peak midday heat; early morning or evening use works best for Pitta types.",
+                f"Combine {topic} with coriander or fennel to enhance its cooling and anti-inflammatory effects for Pitta.",
+            ],
+            'Kapha': [
+                f"Take {topic} with warm water and a pinch of black pepper to stimulate sluggish Kapha digestion.",
+                f"Use {topic} in the morning on an empty stomach to energise and reduce excess Kapha heaviness.",
+                f"Combine {topic} with dry ginger or honey to support Kapha's need for warmth and lightness.",
+            ],
+            'General': [
+                f"Include {topic} regularly in your daily diet to support overall Ayurvedic health and wellness.",
+                f"Prepare {topic} as a warm tea or add it to soups for better bioavailability and digestion.",
+                f"Consult an Ayurvedic practitioner to determine the ideal dosage and personalised timing for {topic}.",
+            ],
+        }
 
-            # --- Primary: split on numbered list markers (1. / 1) / 1:) ---
-            numbered = _re.split(r'(?m)^\s*\d+[\.\)]\s*', full_text)
-            candidates = [t.strip() for t in numbered if len(t.strip()) > 10]
+        # Resolve compound doshas (e.g. "Vata-Pitta" → use Vata templates)
+        key = 'General'
+        for d in ['Vata', 'Pitta', 'Kapha']:
+            if d in dosha:
+                key = d
+                break
 
-            # --- Fallback: line-by-line, strip bullet chars ---
-            if len(candidates) < 2:
-                candidates = [
-                    _re.sub(r'^[-•*]\s*', '', ln).strip()
-                    for ln in content_lines
-                ]
-                candidates = [c for c in candidates if len(c) > 10]
-
-            tips = []
-            for item in candidates[:6]:  # check up to 6, keep best 3
-                if _garbage_re.search(item):
-                    print(f"  ⚠ Skipped (garbage): {item[:60]}")
-                    continue
-                # Take first sentence only (split at sentence boundary before next capital)
-                first_sent = _re.split(r'(?<=[.!?])\s+(?=[A-Z])', item)[0].strip()
-                first_sent = _re.sub(r'\s+', ' ', first_sent)
-                if len(first_sent) > 200:
-                    first_sent = first_sent[:200].rsplit(' ', 1)[0]
-                first_sent = first_sent.rstrip('.!?,;') + '.'
-                if len(first_sent) > 10:
-                    tips.append(first_sent)
-                if len(tips) >= 3:
-                    break
-
-            # --- Template fallback: never return empty tips ---
-            if not tips:
-                print("⚠ All tips filtered — using topic-based fallback")
-                # Extract a short topic keyword from the question
-                topic = _re.sub(
-                    r'^(what are the benefits of|what is|how does|benefits of)\s*',
-                    '', question.lower(), flags=_re.IGNORECASE
-                ).strip().strip('?').strip()
-                tips = [
-                    f"Include {topic} regularly in your daily diet to support overall health for {dosha} dosha.",
-                    f"Use {topic} in warm preparations such as herbal teas or soups for better absorption.",
-                    f"Consult an Ayurvedic practitioner to determine the right dosage and timing for {topic}."
-                ]
-
-            print(f"✓ Tips generated: {len(tips)} tips")
-            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
-
-        except Exception as e:
-            print(f"⚠️  Tip generation failed: {e}")
-            return ""
+        tips = templates[key]
+        print(f"✓ Template tips generated for {key} dosha — topic: '{topic}'")
+        return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
     def answer_question(
         self, 

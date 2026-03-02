@@ -582,15 +582,28 @@ export default function Home() {
 }
 
 function MessageComponent({ message }: { message: Message }) {
-  // Parse answer into bullet points for better readability
-  const formatAnswer = (content: string) => {
-    // Split by common delimiters and create bullet points
-    const sentences = content
+  // Parse answer into display points
+  // Respects • bullets / numbered lines the backend already built;
+  // only falls back to period-splitting for plain prose.
+  const formatAnswer = (content: string): string[] => {
+    const lines = content.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
+
+    // Detect structured output (• bullets or numbered lines)
+    const hasBullets = lines.some(
+      (l) => l.startsWith("•") || l.startsWith("-") || /^\d+\.\s/.test(l)
+    );
+
+    if (hasBullets) {
+      return lines
+        .map((l) => l.replace(/^[•\-]\s*/, "").replace(/^\d+\.\s*/, "").trim())
+        .filter((s) => s.length > 10);
+    }
+
+    // Fallback: split prose by sentence boundary (period/semicolon + space)
+    return content
       .split(/[.;]\s+/)
       .map((s) => s.trim())
-      .filter((s) => s.length > 20); // Filter out very short fragments
-
-    return sentences;
+      .filter((s) => s.length > 20);
   };
 
   const answerPoints =
