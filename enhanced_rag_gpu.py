@@ -444,7 +444,7 @@ Related Question: {question}
 
         return dominant
 
-    def _generate_personalized_tips(self, question: str, answer: str, dosha: str) -> str:
+    def _generate_personalized_tips(self, question: str, answer: str, dosha: str, original_question: str = '') -> str:
         """
         Generate 3 reliable dosha-specific Ayurvedic tips using templates.
         No LLM call — pure template system guarantees clean, relevant output.
@@ -453,15 +453,40 @@ Related Question: {question}
         print(f"💡 Generating template tips for {dosha} dosha...")
 
         # --- Extract a clean topic keyword from the question ---
+        # Use the original (pre-translation) question for topic extraction when available.
+        # Translated questions can be garbled (e.g. "kurudu wala guna" → "Are They Useful")
+        _source_q = question  # already translated to English at this point
+
+        # Try to map romanized Sinhala herb names via the dictionary first
+        try:
+            from translation_service import SINHALA_TO_ENGLISH_DICT
+            for sinhala_key, english_val in SINHALA_TO_ENGLISH_DICT.items():
+                if sinhala_key.lower() in original_question.lower():
+                    _source_q = f"what are the benefits of {english_val}"
+                    break
+        except Exception:
+            pass
+
         topic_raw = _re.sub(
             r'^(what are the benefits of|what are the uses of|what is the use of|'
             r'what is|how does|benefits of|uses of|properties of|'
             r'tell me about|explain|describe)\s+',
-            '', question.lower(), flags=_re.IGNORECASE
+            '', _source_q.lower(), flags=_re.IGNORECASE
         ).strip().strip('?').strip()
 
         # Remove trailing filler words
         topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body)$', '', topic_raw).strip()
+
+        # Guard: if topic_raw is generic/bad (e.g. "are they useful", "it", "they"),
+        # fall back to the original question directly
+        _bad_topics = {'are', 'is', 'it', 'they', 'them', 'this', 'that', 'useful',
+                       'benefits', 'guna', 'monawada', 'what', 'how', 'does', 'do'}
+        topic_words = set(topic_raw.lower().split())
+        if not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics):
+            # Last resort: first noun-like word from original question
+            _words = [w for w in _re.findall(r'\b[a-zA-Z]{4,}\b', original_question)
+                      if w.lower() not in _bad_topics | {'wala', 'what', 'guna', 'monawada'}]
+            topic_raw = _words[0] if _words else 'this herb'
 
         # Capitalize nicely (handles multi-word topics)
         topic = topic_raw.title() if topic_raw else question.strip('?').strip()
@@ -568,38 +593,27 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Token budget — 300 gives room for 2 complete bullet points with context
-        dynamic_tokens = 300
+        # Token budget — 150 tokens is enough for 2-3 clear sentences (Feb 23 approach)
+        dynamic_tokens = 150
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Build messages — use generate_from_messages() so special tokens are
-        # encoded directly and never corrupted by a string round-trip.
-        context_summary = context_text[:800]  # ~200 tokens of context
+        # Build messages — simple single-user-message prompt (Feb 23 proven approach).
+        # Asking for 2-3 sentences produces clean prose; bullet-forcing caused
+        # the model to emit meta-commentary and book-index garbage.
+        context_summary = context_text[:600]  # ~150 tokens of context
         messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an Ayurvedic health assistant. "
-                    "Your job: read the sources and list specific health benefits, uses, or facts. "
-                    "Format: exactly 2 bullet points using the • symbol. "
-                    "Each bullet = one clear, specific benefit or use in one sentence. "
-                    "IMPORTANT: Ignore any book titles, chapter names, verse numbers, "
-                    "or table-of-contents text you see in the sources — only extract health facts. "
-                    "Do NOT mention book names or source references in your answer. "
-                    "Do NOT start with 'Ayurveda provides', 'Based on', or 'According to'. "
-                    "Do NOT end with 'Follow these guidelines' or similar closings."
-                )
-            },
             {
                 "role": "user",
                 "content": (
+                    f"You are an Ayurvedic knowledge assistant. "
+                    f"Using ONLY the sources below, write a clear and complete answer in 2-3 sentences. "
+                    f"Do not add information not in the sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
-                    f"Question: {question}\n\n"
-                    f"List 2 specific health benefits or uses that directly answer this question."
+                    f"Question: {question}"
                 )
             }
         ]
@@ -609,140 +623,9 @@ Related Question: {question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        import re as _re
-
-        # Garbage / corruption pattern (includes citation/reference artefacts)
-        _garbage_re = _re.compile(
-            r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
-            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY|'
-            r'Journal\s+[Oo]f|\([12]\d{3}\)|[A-Za-z]\)|\bVol\.?\s*\d|\bpp?\.\s*\d'
-        )
-
-        # --- Step 1: Strip LLM preamble lines ---
-        _preamble_phrases = [
-            'ayurveda provides', 'based on the sources', 'based on the context',
-            'according to the sources', 'according to ayurveda',
-            'health insights', 'following health', 'for your question',
-            'follow these ayurvedic guidelines', 'here are the', 'here are 3', 'here is'
-        ]
-        raw_lines = raw_answer.strip().split('\n')
-        while raw_lines:
-            first = raw_lines[0].lower().strip()
-            if any(p in first for p in _preamble_phrases) or (first.endswith(':') and len(first) < 120):
-                colon_idx = raw_lines[0].find(':')
-                after = raw_lines[0][colon_idx+1:].strip() if colon_idx != -1 else ''
-                raw_lines.pop(0)
-                if after and len(after) > 15:
-                    raw_lines.insert(0, after)
-                    break
-            else:
-                break
-
-        # --- Step 2: Bullet-first extraction (• lines the model was asked to produce) ---
-        def _clean_bullet_line(line):
-            """Return cleaned sentence from a bullet line, or None if garbage."""
-            # Strip leading bullet characters and whitespace
-            text = _re.sub(r'^[•\-\*]\s*', '', line).strip()
-            if len(text) < 20:
-                return None
-            if _garbage_re.search(text):
-                return None
-            # Remove trailing boilerplate and model meta-notes
-            _trailing = [
-                'follow these', 'guidelines consistently', 'safe and effective',
-                'please note', 'note that', 'note:', 'verbatim', 'per instruction',
-                'information was taken', 'excluding explicit', 'reference citing',
-                'usually accompany', 'scholarly content', 'all information',
-                'taken per', 'accompanying scholarly',
-                # Model meta-commentary / epistemic hedges
-                'reference missing', 'implies additional', 'implied based',
-                'contextual clues', 'assumes additional', 'additional external',
-                'beyond provided', 'external information', 'not explicitly',
-                'not directly stated', 'inferred from', 'based on context',
-                'based on the text', 'it is implied', 'it is assumed',
-                'this fact', 'this assumes', 'not mentioned'
-            ]
-            if any(p in text.lower() for p in _trailing):
-                return None
-            # Reject incomplete/dangling sentences (LLM stopped mid-thought)
-            _dangling_re = _re.compile(
-                r'\b(may|might|could|would|should|which|that|when|where|because|'
-                r'due|and|but|if|since|after|before|the|a|an|such|including|'
-                r'these|those|as|its|their|other|various|many|some)\.$', _re.IGNORECASE
-            )
-            if _dangling_re.search(text):
-                return None
-            # Truncate at 180 chars on word boundary
-            if len(text) > 180:
-                text = text[:180].rsplit(' ', 1)[0].rstrip(',;')
-            text = text.rstrip('.!?') + '.'
-            return '\u2022 ' + text
-
-        bullet_points = []
-        for line in raw_lines:
-            stripped = line.strip()
-            if stripped.startswith(('•', '-', '*')) and len(stripped) > 5:
-                cleaned = _clean_bullet_line(stripped)
-                if cleaned:
-                    bullet_points.append(cleaned)
-            if len(bullet_points) >= 2:
-                break
-
-        # --- Step 3: Fallback — sentence extractor if bullets not found ---
-        if len(bullet_points) < 2:
-            clean_text = ' '.join(raw_lines)
-            # Find sentences that start with capital, are 25–200 chars, end with punctuation
-            candidates = _re.findall(r'[A-Z][^.!?<\n]{25,200}[.!?]', clean_text)
-            for s in candidates:
-                s = s.strip()
-                if _garbage_re.search(s):
-                    continue
-                if len(s) > 180:
-                    s = s[:180].rsplit(' ', 1)[0].rstrip(',;') + '.'
-                _trailing = [
-                    'follow these', 'guidelines consistently', 'safe and effective',
-                    'please note', 'note that', 'note:', 'verbatim', 'per instruction',
-                    'information was taken', 'excluding explicit', 'reference citing',
-                    'usually accompany', 'scholarly content', 'all information',
-                    'taken per', 'accompanying scholarly',
-                    # Model meta-commentary / epistemic hedges
-                    'reference missing', 'implies additional', 'implied based',
-                    'contextual clues', 'assumes additional', 'additional external',
-                    'beyond provided', 'external information', 'not explicitly',
-                    'not directly stated', 'inferred from', 'based on context',
-                    'based on the text', 'it is implied', 'it is assumed',
-                    'this fact', 'this assumes', 'not mentioned'
-                ]
-                if any(p in s.lower() for p in _trailing):
-                    continue
-                # Reject incomplete/dangling sentences
-                _dang = _re.compile(
-                    r'\b(may|might|could|which|that|when|where|because|due|and|if|'
-                    r'the|a|an|such|including|these|those|as|its|their|other|various|many|some)\.$',
-                    _re.IGNORECASE
-                )
-                if _dang.search(s):
-                    continue
-                bullet_points.append('\u2022 ' + s)
-                if len(bullet_points) >= 2:
-                    break
-
-        # Relevance guard: prefer bullets that share at least one keyword with the question.
-        # This catches cases where the LLM hallucinates about a completely different topic.
-        _stop_words = {'the','are','what','is','of','for','in','and','to','a','an',
-                       'how','does','do','its','it','be','was','were','has','have',
-                       'this','that','with','by','at','on','from','their','which'}
-        q_words = {w for w in _re.findall(r'\b\w{3,}\b', question.lower()) if w not in _stop_words}
-        q_words.update(w for w in _re.findall(r'\b\w{3,}\b', search_query.lower()) if w not in _stop_words)
-        if q_words and bullet_points:
-            relevant = [b for b in bullet_points if any(w in b.lower() for w in q_words)]
-            if relevant:  # Only filter if at least one bullet is relevant
-                bullet_points = relevant
-
-        base_answer = '\n'.join(bullet_points[:2]).strip()
-        # Fallback: first 200 chars of raw text (ASCII + Sinhala only)
-        if not base_answer:
-            base_answer = _re.sub(r'[^\x20-\x7E\u0D80-\u0DFF\s]', '', raw_answer).strip()[:200]
+        # Use raw answer directly — complex extractors were rejecting all valid
+        # content and producing meta-commentary as output (Feb 23 proven approach)
+        base_answer = raw_answer.strip()
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
@@ -778,7 +661,7 @@ Related Question: {question}
 
         # Detect dosha and generate personalized tips (always, regardless of user profile)
         detected_dosha = self._detect_dosha_from_question(question, base_answer)
-        personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha)
+        personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha, original_question=original_question)
         print(f"🧬 Detected dosha: {detected_dosha}")
         
         # Format response with similarity percentages
