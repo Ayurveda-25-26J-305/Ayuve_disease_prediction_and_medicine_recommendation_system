@@ -468,26 +468,28 @@ Related Question: {question}
         topic_low = topic_raw if topic_raw else question.lower().strip('?').strip()
 
         # --- Dosha-specific tip templates ---
+        # Sentences are kept simple and short (no 'or' conjunctions) so Google Translate
+        # produces clean Sinhala without negation artifacts.
         templates = {
             'Vata': [
-                f"Use {topic} with warm ghee or sesame oil to ground Vata and improve absorption.",
-                f"Take {topic} at the same time each day — consistency is key for balancing Vata's irregular nature.",
-                f"Combine {topic} with warming spices like ginger or black pepper to enhance its effectiveness for Vata.",
+                f"Mix {topic} with warm ghee before meals to ground Vata and improve absorption.",
+                f"Take {topic} at the same time each day to balance Vata's naturally irregular rhythm.",
+                f"Add a pinch of black pepper to {topic} preparations to enhance warmth and effectiveness for Vata.",
             ],
             'Pitta': [
-                f"Use {topic} in moderate amounts alongside cooling foods like coconut milk to prevent Pitta overheating.",
-                f"Avoid taking {topic} during peak midday heat; early morning or evening use works best for Pitta types.",
-                f"Combine {topic} with coriander or fennel to enhance its cooling and anti-inflammatory effects for Pitta.",
+                f"Take {topic} in small amounts mixed with coconut milk to prevent excess Pitta heat.",
+                f"Use {topic} in the early morning before peak midday heat for best results in Pitta types.",
+                f"Add fennel to {topic} preparations to strengthen its cooling effect for Pitta dosha.",
             ],
             'Kapha': [
-                f"Take {topic} with warm water and a pinch of black pepper to stimulate sluggish Kapha digestion.",
-                f"Use {topic} in the morning on an empty stomach to energise and reduce excess Kapha heaviness.",
-                f"Combine {topic} with dry ginger or honey to support Kapha's need for warmth and lightness.",
+                f"Take {topic} with warm water and a pinch of black pepper to stimulate Kapha digestion.",
+                f"Use {topic} in the morning on an empty stomach to reduce excess Kapha heaviness.",
+                f"Mix {topic} with dry ginger to strengthen its warming and energising effect for Kapha.",
             ],
             'General': [
-                f"Include {topic} regularly in your daily diet to support overall Ayurvedic health and wellness.",
-                f"Prepare {topic} as a warm tea or add it to soups for better bioavailability and digestion.",
-                f"Consult an Ayurvedic practitioner to determine the ideal dosage and personalised timing for {topic}.",
+                f"Add {topic} to your daily meals to support overall Ayurvedic health and wellness.",
+                f"Prepare {topic} as a warm herbal tea each morning for better absorption and digestion.",
+                f"Consult an Ayurvedic practitioner to determine the correct dosage of {topic} for your body type.",
             ],
         }
 
@@ -644,8 +646,14 @@ Related Question: {question}
                 return None
             if _garbage_re.search(text):
                 return None
-            # Remove trailing boilerplate
-            _trailing = ['follow these', 'guidelines consistently', 'safe and effective']
+            # Remove trailing boilerplate and model meta-notes
+            _trailing = [
+                'follow these', 'guidelines consistently', 'safe and effective',
+                'please note', 'note that', 'note:', 'verbatim', 'per instruction',
+                'information was taken', 'excluding explicit', 'reference citing',
+                'usually accompany', 'scholarly content', 'all information',
+                'taken per', 'accompanying scholarly'
+            ]
             if any(p in text.lower() for p in _trailing):
                 return None
             # Truncate at 180 chars on word boundary
@@ -675,7 +683,13 @@ Related Question: {question}
                     continue
                 if len(s) > 180:
                     s = s[:180].rsplit(' ', 1)[0].rstrip(',;') + '.'
-                _trailing = ['follow these', 'guidelines consistently', 'safe and effective']
+                _trailing = [
+                    'follow these', 'guidelines consistently', 'safe and effective',
+                    'please note', 'note that', 'note:', 'verbatim', 'per instruction',
+                    'information was taken', 'excluding explicit', 'reference citing',
+                    'usually accompany', 'scholarly content', 'all information',
+                    'taken per', 'accompanying scholarly'
+                ]
                 if any(p in s.lower() for p in _trailing):
                     continue
                 bullet_points.append('\u2022 ' + s)
