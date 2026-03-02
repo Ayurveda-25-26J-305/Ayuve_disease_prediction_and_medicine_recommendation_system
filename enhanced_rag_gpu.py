@@ -182,13 +182,18 @@ Related Question: {question}
             s = s.strip().rstrip('.,;- ')
             if not s:
                 continue
-            if len(s) < 25:
+            if len(s) < 15:
                 continue
             low = s.lower()
             if any(low.startswith(f) for f in FILLER_STARTS):
                 continue
-            # Reject sentences that are entirely about sources/references
-            if re.search(r'\b(source|text|book|chapter|verse|reference|citation|author|literature)\b', low):
+            # Reject only sentences that are PRIMARILY about citing sources/references
+            # (must contain source/citation/reference AND a verb like "states"/"mentions")
+            if re.search(r'\b(source|citation|reference)\b', low) and \
+               re.search(r'\b(states?|says?|mentions?|notes?|reports?|indicates?|describes?)\b', low):
+                continue
+            # Reject sentences that are pure bibliography/chapter/verse markers
+            if re.search(r'\b(chapter|verse|bibliography|ibid)\b', low):
                 continue
             # Ensure sentence ends with proper punctuation
             if not s[-1] in '.!?':
@@ -198,10 +203,21 @@ Related Question: {question}
             clean.append(s)
 
         if not clean:
-            return raw.strip()  # fallback: return raw if everything was stripped
+            # Fallback: split raw into sentences and take first 3 as bullets
+            fallback_sentences = re.split(r'(?<=[.!?])\s+', raw.strip())
+            fallback_clean = []
+            for s in fallback_sentences:
+                s = s.strip()
+                if len(s) > 15:
+                    if s[-1] not in '.!?':
+                        s = s + '.'
+                    fallback_clean.append(s[0].upper() + s[1:])
+            if fallback_clean:
+                return '\n'.join(f'\u2022 {b}' for b in fallback_clean[:3])
+            return raw.strip()
 
-        # 9. Return up to 2 bullets
-        bullets = clean[:2]
+        # 9. Return up to 3 bullets
+        bullets = clean[:3]
         return '\n'.join(f'\u2022 {b}' for b in bullets)
 
     def _format_answer(self, raw_answer: str) -> str:
