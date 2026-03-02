@@ -586,13 +586,22 @@ function MessageComponent({ message }: { message: Message }) {
   // For Sinhala text, don't split — render as a single paragraph.
   const formatAnswer = (content: string, lang?: string): string[] => {
     if (!content || !content.trim()) return [];
-    // Sinhala or very short content: show as-is
-    if (lang === "si" || content.length < 60) return [content.trim()];
-    // Split on sentence boundaries (period/question-mark/exclamation + space + capital)
+
+    // Non-English scripts (Sinhala / Tamil): show as a single block, no splitting
+    if (lang === "si" || lang === "ta") return [content.trim()];
+
+    // Structured bullet output from backend (• prefix lines)
+    const lines = content
+      .split("\n")
+      .map((l) => l.replace(/^[•\-\*]\s*/, "").trim())
+      .filter((l) => l.length > 15);
+    if (content.includes("•") && lines.length > 0) return lines;
+
+    // Plain prose: split on sentence boundaries (. ! ? followed by capital)
     const sentences = content
-      .split(/(?<=[.!?])\s+(?=[A-Z඀-෿])/)
+      .split(/(?<=[.!?])\s+(?=[A-Z])/)
       .map((s) => s.trim())
-      .filter((s) => s.length > 15);
+      .filter((s) => s.length > 20);
     return sentences.length > 1 ? sentences : [content.trim()];
   };
 

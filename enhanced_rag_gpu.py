@@ -114,6 +114,96 @@ Related Question: {question}
         
         return "\n\n".join(context_blocks)
     
+    def _restructure_answer(self, raw: str, question: str = '') -> str:
+        """
+        Clean the raw LLM output into 2 concise, meaningful bullet points.
+        Steps (all pure regex/string — no extra LLM call):
+          1. Strip attribution preambles ("According to X", "Based on the sources")
+          2. Strip inline source labels  ("(source one)", "Source 1 states")
+          3. Strip quoted book titles    (\"Ayurvedhan\", 'Everyday Ayurveda')
+          4. Split into sentences
+          5. Reject filler / meta-commentary sentences
+          6. Return first 2 clean sentences as bullet strings
+        """
+        import re
+
+        if not raw or not raw.strip():
+            return raw
+
+        text = raw.strip()
+
+        # 1. Strip leading attribution: "According to X, " / "Based on X, " / "X states that "
+        text = re.sub(
+            r'^(?:According\s+to|Based\s+on|As\s+per|Per|From)\s+[^,;.]{0,80}[,;]\s*',
+            '', text, flags=re.IGNORECASE
+        )
+        # Also: "[Book name] (source one) states / mentions / says"
+        text = re.sub(
+            r'["\u2018\u201c][^"\u2019\u201d]{2,50}["\u2019\u201d]\s*(?:\([^)]{0,40}\))?\s*(?:states?|says?|mentions?|notes?|reports?|indicates?)\s+(?:that\s+)?',
+            '', text, flags=re.IGNORECASE
+        )
+
+        # 2. Strip inline source labels everywhere
+        text = re.sub(r'\([Ss]ource\s*(?:one|two|three|four|1|2|3|4)\)', '', text)
+        text = re.sub(r'\b[Ss]ource\s*(?:one|two|three|1|2|3)\b', '', text)
+
+        # 3. Strip quoted book titles left as orphan fragments
+        text = re.sub(r'["\u2018\u201c][^"\u2019\u201d]{2,60}["\u2019\u201d]', '', text)
+
+        # 4. Strip patterns like "(Curcuma longa Rhizome)" — raw taxonomy noise
+        text = re.sub(r"\b[A-Z][a-z]+\s+[a-z]+\s+(?:[A-Z][a-z]+\s+)?[Rr]hiz\w*\b", '', text)
+
+        # 5. Clean up punctuation artifacts left by stripping
+        text = re.sub(r'\s*,\s*,', ',', text)        # double commas
+        text = re.sub(r'^[,;:\s]+', '', text)         # leading punctuation
+        text = re.sub(r'\s{2,}', ' ', text)           # multiple spaces
+        text = text.strip()
+
+        # 6. Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+
+        # 7. Also split on semicolons for run-on lists (take first segment only)
+        expanded = []
+        for s in sentences:
+            # If a sentence has multiple semicolons it's a list — take first part
+            parts = s.split(';')
+            expanded.append(parts[0].strip())
+
+        # 8. Filter out filler / meta-commentary / very short fragments
+        FILLER_STARTS = [
+            'all these', 'these factor', 'this information', 'the above', 'as mentioned',
+            'in summary', 'in conclusion', 'therefore', 'thus,', 'hence,',
+            'it is worth', 'it should be noted', 'please note', 'note that',
+            'based on', 'according to', 'the source', 'outlined by',
+            'outlined above', 'referring to', 'as per', 'as noted',
+        ]
+        clean = []
+        for s in expanded:
+            s = s.strip().rstrip('.,;- ')
+            if not s:
+                continue
+            if len(s) < 25:
+                continue
+            low = s.lower()
+            if any(low.startswith(f) for f in FILLER_STARTS):
+                continue
+            # Reject sentences that are entirely about sources/references
+            if re.search(r'\b(source|text|book|chapter|verse|reference|citation|author|literature)\b', low):
+                continue
+            # Ensure sentence ends with proper punctuation
+            if not s[-1] in '.!?':
+                s = s + '.'
+            # Capitalize first letter
+            s = s[0].upper() + s[1:]
+            clean.append(s)
+
+        if not clean:
+            return raw.strip()  # fallback: return raw if everything was stripped
+
+        # 9. Return up to 2 bullets
+        bullets = clean[:2]
+        return '\n'.join(f'\u2022 {b}' for b in bullets)
+
     def _format_answer(self, raw_answer: str) -> str:
         """
         Post-process generated answer to ensure quality formatting.
@@ -609,8 +699,8 @@ Related Question: {question}
                 "role": "user",
                 "content": (
                     f"You are an Ayurvedic knowledge assistant. "
-                    f"Using ONLY the sources below, write a clear and complete answer in 2-3 sentences. "
-                    f"Do not add information not in the sources.\n\n"
+                    f"Using ONLY the sources below, write a clear answer in 2-3 sentences. "
+                    f"State health facts directly. Do NOT say 'According to', do NOT name book titles or sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}"
                 )
@@ -624,7 +714,10 @@ Related Question: {question}
 
         # Use raw answer directly — complex extractors were rejecting all valid
         # content and producing meta-commentary as output (Feb 23 proven approach)
-        base_answer = raw_answer.strip()
+        raw_answer = raw_answer.strip()
+
+        # Restructure: strip attribution/source noise, extract 2 clean bullet facts
+        base_answer = self._restructure_answer(raw_answer, question=question)
 
         print(f"✅ Generation complete!")
         print(f"   Answer length: {len(base_answer)} chars")
