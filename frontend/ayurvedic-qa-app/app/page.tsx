@@ -586,16 +586,24 @@ function MessageComponent({ message }: { message: Message }) {
   // Respects • bullets / numbered lines the backend already built;
   // only falls back to period-splitting for plain prose.
   const formatAnswer = (content: string): string[] => {
-    const lines = content.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
+    const lines = content
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
 
     // Detect structured output (• bullets or numbered lines)
     const hasBullets = lines.some(
-      (l) => l.startsWith("•") || l.startsWith("-") || /^\d+\.\s/.test(l)
+      (l) => l.startsWith("•") || l.startsWith("-") || /^\d+\.\s/.test(l),
     );
 
     if (hasBullets) {
       return lines
-        .map((l) => l.replace(/^[•\-]\s*/, "").replace(/^\d+\.\s*/, "").trim())
+        .map((l) =>
+          l
+            .replace(/^[•\-]\s*/, "")
+            .replace(/^\d+\.\s*/, "")
+            .trim(),
+        )
         .filter((s) => s.length > 10);
     }
 
