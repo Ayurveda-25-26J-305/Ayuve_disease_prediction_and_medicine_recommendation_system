@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 const API_BASE_URL = "";
 
 interface Message {
+  id: number;
   type: "question" | "answer";
   content: string;
   citations?: Citation[];
@@ -143,6 +144,9 @@ export default function Home() {
     Record<string, string>
   >({});
   const [prakritiSubmitting, setPrakritiSubmitting] = useState(false);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [lastQuestion, setLastQuestion] = useState<string>("");
+  const msgIdRef = useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -186,11 +190,68 @@ export default function Home() {
     }
   };
 
+  const nextId = () => ++msgIdRef.current;
+
+  // --- Conversation memory: detect follow-up questions ---
+  const FOLLOW_UP_RE = /^(what about|tell me more|more about|how does it|how does that|and what|explain more|why is that|is it good for|what else|any side effects|side effects of|dosage of|how much|when to take|how to use it|how to take it|what are its|what are the side|is it safe|can i|how often)/i;
+  const PRONOUN_ONLY_RE = /^(it|that|this|those|they|them|its)\b/i;
+
+  const buildQuestion = (q: string): string => {
+    if (!lastQuestion) return q;
+    const words = q.trim().split(/\s+/);
+    const isFollowUp = FOLLOW_UP_RE.test(q) || (words.length <= 5 && PRONOUN_ONLY_RE.test(q));
+    if (isFollowUp) return `${q} (regarding: ${lastQuestion})`;
+    return q;
+  };
+
+  // --- Delete a Q+A pair by message id ---
+  const deleteMessage = (id: number) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      // If it's a question and next is an answer, remove both
+      if (next[idx].type === "question" && next[idx + 1]?.type === "answer") {
+        next.splice(idx, 2);
+      } else {
+        next.splice(idx, 1);
+      }
+      if (next.length === 0) setShowWelcome(true);
+      return next;
+    });
+  };
+
+  // --- Undo: remove last Q+A pair ---
+  const undoLast = () => {
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      // Remove last answer if it exists
+      if (next[next.length - 1]?.type === "answer") next.pop();
+      // Remove last question
+      if (next[next.length - 1]?.type === "question") next.pop();
+      if (next.length === 0) setShowWelcome(true);
+      return next;
+    });
+  };
+
+  // --- Copy to clipboard ---
+  const copyToClipboard = (text: string, id: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
   const askQuestion = async (question: string) => {
     if (!question.trim()) return;
 
+    const finalQuestion = buildQuestion(question);
+    setLastQuestion(question); // store original (not expanded) for display
+
     setShowWelcome(false);
-    setMessages((prev) => [...prev, { type: "question", content: question }]);
+    const qId = nextId();
+    setMessages((prev) => [...prev, { id: qId, type: "question", content: question }]);
     setInput("");
     setLoading(true);
 
@@ -205,7 +266,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question, user_id: userId || undefined }),
+        body: JSON.stringify({ question: finalQuestion, user_id: userId || undefined }),
       });
 
       clearTimeout(timeoutId);
@@ -217,9 +278,11 @@ export default function Home() {
       const data = await response.json();
 
       if (data.success) {
+        const aId = nextId();
         setMessages((prev) => [
           ...prev,
           {
+            id: aId,
             type: "answer",
             content: data.answer || "No answer received",
             citations: data.citations || [],
@@ -236,6 +299,7 @@ export default function Home() {
         setMessages((prev) => [
           ...prev,
           {
+            id: nextId(),
             type: "answer",
             content: `❌ Error: ${data.error || "Unknown error"}`,
           },
@@ -251,6 +315,7 @@ export default function Home() {
       setMessages((prev) => [
         ...prev,
         {
+          id: nextId(),
           type: "answer",
           content: errorMessage,
         },
@@ -541,8 +606,14 @@ export default function Home() {
             </div>
           )}
 
-          {messages.map((msg, idx) => (
-            <MessageComponent key={idx} message={msg} />
+          {messages.map((msg) => (
+            <MessageComponent
+              key={msg.id}
+              message={msg}
+              onDelete={() => deleteMessage(msg.id)}
+              onCopy={(text) => copyToClipboard(text, msg.id)}
+              isCopied={copiedId === msg.id}
+            />
           ))}
 
           {loading && (
@@ -575,13 +646,55 @@ export default function Home() {
               <span>{loading ? "Thinking..." : "Ask"}</span>
             </button>
           </form>
+          {/* Undo button — shown when there are messages */}
+          {messages.length > 0 && !loading && (
+            <button
+              onClick={undoLast}
+              title="Undo last question"
+              style={{
+                marginTop: "8px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "none",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                padding: "6px 14px",
+                color: "#6b7280",
+                fontSize: "0.85em",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "#ef4444";
+                (e.currentTarget as HTMLButtonElement).style.color = "#ef4444";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "#d1d5db";
+                (e.currentTarget as HTMLButtonElement).style.color = "#6b7280";
+              }}
+            >
+              ↩ Undo last
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function MessageComponent({ message }: { message: Message }) {
+function MessageComponent({
+  message,
+  onDelete,
+  onCopy,
+  isCopied,
+}: {
+  message: Message;
+  onDelete: () => void;
+  onCopy: (text: string) => void;
+  isCopied: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
   // Answer is prose (2-3 sentences). Split on sentence boundaries for display.
   // For Sinhala text, don't split — render as a single paragraph.
   const formatAnswer = (content: string, lang?: string): string[] => {
@@ -610,8 +723,69 @@ function MessageComponent({ message }: { message: Message }) {
       ? formatAnswer(message.content, message.detectedLanguage)
       : [];
 
+  // Plain-text version of answer for copying
+  const answerPlainText = message.type === "answer"
+    ? [
+        message.content,
+        message.personalizedTips ? `\nTips:\n${message.personalizedTips}` : "",
+      ].join("")
+    : message.content;
+
   return (
-    <div className={`message message-${message.type}`}>
+    <div
+      className={`message message-${message.type}`}
+      style={{ position: "relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Action toolbar — shown on hover */}
+      {hovered && (
+        <div
+          style={{
+            position: "absolute",
+            top: "-10px",
+            right: "8px",
+            display: "flex",
+            gap: "4px",
+            zIndex: 10,
+          }}
+        >
+          <button
+            onClick={() => onCopy(answerPlainText)}
+            title="Copy"
+            style={{
+              padding: "3px 8px",
+              borderRadius: "6px",
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              color: isCopied ? "#059669" : "#6b7280",
+              fontSize: "0.78em",
+              cursor: "pointer",
+              fontWeight: "600",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+            }}
+          >
+            {isCopied ? "✓ Copied" : "📋 Copy"}
+          </button>
+          <button
+            onClick={onDelete}
+            title="Delete"
+            style={{
+              padding: "3px 8px",
+              borderRadius: "6px",
+              border: "1px solid #fca5a5",
+              background: "#fff",
+              color: "#ef4444",
+              fontSize: "0.78em",
+              cursor: "pointer",
+              fontWeight: "600",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+            }}
+          >
+            🗑️ Delete
+          </button>
+        </div>
+      )}
       <div className="message-content">
         {message.type === "question" ? (
           <div>{message.content}</div>
