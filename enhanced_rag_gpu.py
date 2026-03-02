@@ -653,7 +653,14 @@ Related Question: {question}
                 'please note', 'note that', 'note:', 'verbatim', 'per instruction',
                 'information was taken', 'excluding explicit', 'reference citing',
                 'usually accompany', 'scholarly content', 'all information',
-                'taken per', 'accompanying scholarly'
+                'taken per', 'accompanying scholarly',
+                # Model meta-commentary / epistemic hedges
+                'reference missing', 'implies additional', 'implied based',
+                'contextual clues', 'assumes additional', 'additional external',
+                'beyond provided', 'external information', 'not explicitly',
+                'not directly stated', 'inferred from', 'based on context',
+                'based on the text', 'it is implied', 'it is assumed',
+                'this fact', 'this assumes', 'not mentioned'
             ]
             if any(p in text.lower() for p in _trailing):
                 return None
@@ -697,7 +704,14 @@ Related Question: {question}
                     'please note', 'note that', 'note:', 'verbatim', 'per instruction',
                     'information was taken', 'excluding explicit', 'reference citing',
                     'usually accompany', 'scholarly content', 'all information',
-                    'taken per', 'accompanying scholarly'
+                    'taken per', 'accompanying scholarly',
+                    # Model meta-commentary / epistemic hedges
+                    'reference missing', 'implies additional', 'implied based',
+                    'contextual clues', 'assumes additional', 'additional external',
+                    'beyond provided', 'external information', 'not explicitly',
+                    'not directly stated', 'inferred from', 'based on context',
+                    'based on the text', 'it is implied', 'it is assumed',
+                    'this fact', 'this assumes', 'not mentioned'
                 ]
                 if any(p in s.lower() for p in _trailing):
                     continue
@@ -819,14 +833,11 @@ Related Question: {question}
                 print("⚠️  Translation returned empty, using English")
                 display_answer = final_answer
 
-        # Translate personalized tips to Sinhala if user asked in Singlish/Sinhala
-        if self.enable_translation and self.translator and detected_language == 'si' and personalized_tips:
-            print("🔄 Translating personalized tips to Sinhala...")
-            raw_tips_si = self.translator.translate_en_to_si(personalized_tips)
-            if raw_tips_si and raw_tips_si.strip():
-                personalized_tips = raw_tips_si.strip()
-            else:
-                print("⚠️  Tips translation returned empty, keeping English")
+        # Tips are always kept in English regardless of query language.
+        # Google Translate consistently corrupts compound Ayurvedic sentences
+        # (inserts 'ප්‍රයෝජනයක් නැත' for 'and'-joined predicates).
+        # English tips are clear and universally readable.
+        print("ℹ️  Skipping tips translation — keeping English tips for clean display")
 
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs
