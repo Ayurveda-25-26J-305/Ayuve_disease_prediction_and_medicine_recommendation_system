@@ -566,8 +566,8 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Token budget — 300 gives room for 3 complete bullet points with context
-        dynamic_tokens = 300
+        # Token budget — 400 gives room for 3 complete bullet points with context
+        dynamic_tokens = 400
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -576,20 +576,19 @@ Related Question: {question}
         
         # Build messages — use generate_from_messages() so special tokens are
         # encoded directly and never corrupted by a string round-trip.
-        context_summary = context_text[:800]  # ~200 tokens of context
+        context_summary = context_text[:1200]  # ~300 tokens of context
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are an Ayurvedic health assistant. "
-                    "Your job: read the sources and list specific health benefits, uses, or facts. "
-                    "Format: exactly 3 bullet points using the • symbol. "
-                    "Each bullet = one clear, specific benefit or use in one sentence. "
-                    "IMPORTANT: Ignore any book titles, chapter names, verse numbers, "
-                    "or table-of-contents text you see in the sources — only extract health facts. "
-                    "Do NOT mention book names or source references in your answer. "
-                    "Do NOT start with 'Ayurveda provides', 'Based on', or 'According to'. "
-                    "Do NOT end with 'Follow these guidelines' or similar closings."
+                    "You MUST respond with EXACTLY 3 bullet points, no more, no less. "
+                    "Use the • symbol to start each bullet. "
+                    "Each bullet is ONE complete sentence describing a specific health benefit or use. "
+                    "Read the sources carefully and extract 3 different facts. "
+                    "Ignore book titles, chapter names, verse numbers, and table-of-contents entries. "
+                    "Do NOT mention book names. "
+                    "Do NOT add any introduction or conclusion — output ONLY the 3 bullet lines."
                 )
             },
             {
@@ -597,7 +596,8 @@ Related Question: {question}
                 "content": (
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}\n\n"
-                    f"List 3 specific health benefits or uses that directly answer this question."
+                    f"Write exactly 3 bullet points (starting with •) that answer the question above.\n"
+                    f"• "
                 )
             }
         ]
@@ -606,6 +606,11 @@ Related Question: {question}
         # Generate answer
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
+
+        # The user prompt ends with "• " as a priming cue, so the model's first
+        # output line is the continuation of that first bullet (no leading •).
+        # Prepend it back so the bullet extractor sees all 3 lines uniformly.
+        raw_answer = '• ' + raw_answer.lstrip()
 
         import re as _re
 
