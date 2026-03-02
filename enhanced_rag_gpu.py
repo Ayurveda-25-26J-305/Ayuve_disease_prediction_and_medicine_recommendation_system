@@ -596,8 +596,7 @@ Related Question: {question}
                 "content": (
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}\n\n"
-                    f"Write exactly 3 bullet points (starting with •) that answer the question above.\n"
-                    f"• "
+                    f"Write exactly 3 bullet points (starting with \u2022) that answer the question above."
                 )
             }
         ]
@@ -607,17 +606,13 @@ Related Question: {question}
         print("💭 Generating answer...")
         raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
 
-        # The user prompt ends with "• " as a priming cue, so the model's first
-        # output line is the continuation of that first bullet (no leading •).
-        # Prepend it back so the bullet extractor sees all 3 lines uniformly.
-        raw_answer = '• ' + raw_answer.lstrip()
-
         import re as _re
 
-        # Garbage / corruption pattern
+        # Garbage / corruption pattern (URLs, broken markdown links, special tokens)
         _garbage_re = _re.compile(
             r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
-            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY'
+            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY|'
+            r'https?://|\]\(http|BookStore|PricedMed|TextBook'
         )
 
         # --- Step 1: Strip LLM preamble lines ---
