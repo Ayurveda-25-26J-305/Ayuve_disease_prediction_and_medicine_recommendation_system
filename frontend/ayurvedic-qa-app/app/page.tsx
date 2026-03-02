@@ -582,40 +582,24 @@ export default function Home() {
 }
 
 function MessageComponent({ message }: { message: Message }) {
-  // Parse answer into display points
-  // Respects • bullets / numbered lines the backend already built;
-  // only falls back to period-splitting for plain prose.
-  const formatAnswer = (content: string): string[] => {
-    const lines = content
-      .split("\n")
+  // Answer is prose (2-3 sentences). Split on sentence boundaries for display.
+  // For Sinhala text, don't split — render as a single paragraph.
+  const formatAnswer = (content: string, lang?: string): string[] => {
+    if (!content || !content.trim()) return [];
+    // Sinhala or very short content: show as-is
+    if (lang === "si" || content.length < 60) return [content.trim()];
+    // Split on sentence boundaries (period/question-mark/exclamation + space + capital)
+    const sentences = content
+      .split(/(?<=[.!?])\s+(?=[A-Z඀-෿])/)
       .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    // Detect structured output (• bullets or numbered lines)
-    const hasBullets = lines.some(
-      (l) => l.startsWith("•") || l.startsWith("-") || /^\d+\.\s/.test(l),
-    );
-
-    if (hasBullets) {
-      return lines
-        .map((l) =>
-          l
-            .replace(/^[•\-]\s*/, "")
-            .replace(/^\d+\.\s*/, "")
-            .trim(),
-        )
-        .filter((s) => s.length > 10);
-    }
-
-    // Fallback: split prose by sentence boundary (period/semicolon + space)
-    return content
-      .split(/[.;]\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 20);
+      .filter((s) => s.length > 15);
+    return sentences.length > 1 ? sentences : [content.trim()];
   };
 
   const answerPoints =
-    message.type === "answer" ? formatAnswer(message.content) : [];
+    message.type === "answer"
+      ? formatAnswer(message.content, message.detectedLanguage)
+      : [];
 
   return (
     <div className={`message message-${message.type}`}>
@@ -647,25 +631,18 @@ function MessageComponent({ message }: { message: Message }) {
                 }}
               >
                 {answerPoints.length > 0 ? (
-                  <ul
-                    style={{
-                      margin: 0,
-                      paddingLeft: "24px",
-                      lineHeight: "1.8",
-                    }}
-                  >
+                  <div style={{ lineHeight: "1.8", color: "#1f2937" }}>
                     {answerPoints.map((point, idx) => (
-                      <li
+                      <p
                         key={idx}
                         style={{
-                          marginBottom: "8px",
-                          color: "#1f2937",
+                          margin: idx < answerPoints.length - 1 ? "0 0 8px 0" : "0",
                         }}
                       >
                         {point}
-                      </li>
+                      </p>
                     ))}
-                  </ul>
+                  </div>
                 ) : (
                   <div>{message.content}</div>
                 )}
@@ -738,6 +715,8 @@ function MessageComponent({ message }: { message: Message }) {
                         <div
                           key={idx}
                           style={{
+                            display: "flex",
+                            gap: "8px",
                             marginBottom:
                               idx <
                               message
@@ -750,7 +729,10 @@ function MessageComponent({ message }: { message: Message }) {
                             lineHeight: "1.7",
                           }}
                         >
-                          {line}
+                          <span style={{ color: "#7c3aed", fontWeight: "700", minWidth: "20px" }}>
+                            {idx + 1}.
+                          </span>
+                          <span>{line.replace(/^\d+\.\s*/, "")}</span>
                         </div>
                       ))}
                   </div>

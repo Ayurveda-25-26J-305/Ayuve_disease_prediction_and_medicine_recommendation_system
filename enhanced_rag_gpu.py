@@ -706,12 +706,23 @@ Related Question: {question}
             # Workflow: Singlish/Sinhala input → English processing → Sinhala output
             print("🔄 Translating answer to Sinhala...")
             
-            # Translate directly — no pre/post processing (cleanup was destroying valid Sinhala)
-            raw_translation = self.translator.translate_en_to_si(final_answer)
+            # Step 1: Simplify English sentences for cleaner Google Translate output
+            simplified_english = self._simplify_for_translation(final_answer)
+            print(f"📝 Simplified for translation: {simplified_english[:100]}...")
             
-            if raw_translation and raw_translation.strip():
+            # Step 2: Translate
+            raw_translation = self.translator.translate_en_to_si(simplified_english)
+            
+            # Step 3: Clean up translated Sinhala text
+            cleaned_translation = self._cleanup_translated_answer(raw_translation)
+            
+            if cleaned_translation and len(cleaned_translation.strip()) >= 20:
+                display_answer = cleaned_translation.strip()
+                print(f"\u2713 Translation complete: {display_answer[:100]}...")
+            elif raw_translation and raw_translation.strip():
+                # Cleanup removed too much — use raw translation
                 display_answer = raw_translation.strip()
-                print(f"✓ Translation complete: {display_answer[:100]}...")
+                print(f"\u26a0\ufe0f  Cleanup over-filtered, using raw translation")
             else:
                 print("⚠️  Translation returned empty, using English")
                 display_answer = final_answer
