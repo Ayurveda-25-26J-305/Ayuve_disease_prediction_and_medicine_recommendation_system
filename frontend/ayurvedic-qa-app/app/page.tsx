@@ -193,13 +193,15 @@ export default function Home() {
   const nextId = () => ++msgIdRef.current;
 
   // --- Conversation memory: detect follow-up questions ---
-  const FOLLOW_UP_RE = /^(what about|tell me more|more about|how does it|how does that|and what|explain more|why is that|is it good for|what else|any side effects|side effects of|dosage of|how much|when to take|how to use it|how to take it|what are its|what are the side|is it safe|can i|how often)/i;
+  const FOLLOW_UP_RE =
+    /^(what about|tell me more|more about|how does it|how does that|and what|explain more|why is that|is it good for|what else|any side effects|side effects of|dosage of|how much|when to take|how to use it|how to take it|what are its|what are the side|is it safe|can i|how often)/i;
   const PRONOUN_ONLY_RE = /^(it|that|this|those|they|them|its)\b/i;
 
   const buildQuestion = (q: string): string => {
     if (!lastQuestion) return q;
     const words = q.trim().split(/\s+/);
-    const isFollowUp = FOLLOW_UP_RE.test(q) || (words.length <= 5 && PRONOUN_ONLY_RE.test(q));
+    const isFollowUp =
+      FOLLOW_UP_RE.test(q) || (words.length <= 5 && PRONOUN_ONLY_RE.test(q));
     if (isFollowUp) return `${q} (regarding: ${lastQuestion})`;
     return q;
   };
@@ -210,11 +212,14 @@ export default function Home() {
       const idx = prev.findIndex((m) => m.id === id);
       if (idx === -1) return prev;
       const next = [...prev];
-      // If it's a question and next is an answer, remove both
-      if (next[idx].type === "question" && next[idx + 1]?.type === "answer") {
-        next.splice(idx, 2);
+      if (next[idx].type === "question") {
+        // Remove question + its following answer
+        if (next[idx + 1]?.type === "answer") next.splice(idx, 2);
+        else next.splice(idx, 1);
       } else {
-        next.splice(idx, 1);
+        // Clicked on answer — also remove its preceding question
+        if (next[idx - 1]?.type === "question") next.splice(idx - 1, 2);
+        else next.splice(idx, 1);
       }
       if (next.length === 0) setShowWelcome(true);
       return next;
@@ -251,7 +256,10 @@ export default function Home() {
 
     setShowWelcome(false);
     const qId = nextId();
-    setMessages((prev) => [...prev, { id: qId, type: "question", content: question }]);
+    setMessages((prev) => [
+      ...prev,
+      { id: qId, type: "question", content: question },
+    ]);
     setInput("");
     setLoading(true);
 
@@ -266,7 +274,10 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question: finalQuestion, user_id: userId || undefined }),
+        body: JSON.stringify({
+          question: finalQuestion,
+          user_id: userId || undefined,
+        }),
       });
 
       clearTimeout(timeoutId);
@@ -612,6 +623,7 @@ export default function Home() {
               message={msg}
               onDelete={() => deleteMessage(msg.id)}
               onCopy={(text) => copyToClipboard(text, msg.id)}
+              onUndo={undoLast}
               isCopied={copiedId === msg.id}
             />
           ))}
@@ -646,37 +658,6 @@ export default function Home() {
               <span>{loading ? "Thinking..." : "Ask"}</span>
             </button>
           </form>
-          {/* Undo button — shown when there are messages */}
-          {messages.length > 0 && !loading && (
-            <button
-              onClick={undoLast}
-              title="Undo last question"
-              style={{
-                marginTop: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                background: "none",
-                border: "1px solid #d1d5db",
-                borderRadius: "8px",
-                padding: "6px 14px",
-                color: "#6b7280",
-                fontSize: "0.85em",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = "#ef4444";
-                (e.currentTarget as HTMLButtonElement).style.color = "#ef4444";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = "#d1d5db";
-                (e.currentTarget as HTMLButtonElement).style.color = "#6b7280";
-              }}
-            >
-              ↩ Undo last
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -687,14 +668,59 @@ function MessageComponent({
   message,
   onDelete,
   onCopy,
+  onUndo,
   isCopied,
 }: {
   message: Message;
   onDelete: () => void;
   onCopy: (text: string) => void;
+  onUndo: () => void;
   isCopied: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [deleteHovered, setDeleteHovered] = useState(false);
+  const [undoHovered, setUndoHovered] = useState(false);
+
+  // SVG icon components
+  const CopyIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>
+  );
+  const CheckIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  );
+  const UndoIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7v6h6"/>
+      <path d="M3 13a9 9 0 1 0 2.83-6.36L3 9"/>
+    </svg>
+  );
+  const TrashIcon = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+    </svg>
+  );
+
+  const iconBtnBase: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "30px",
+    height: "30px",
+    borderRadius: "8px",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    cursor: "pointer",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+    transition: "all 0.15s",
+  };
   // Answer is prose (2-3 sentences). Split on sentence boundaries for display.
   // For Sinhala text, don't split — render as a single paragraph.
   const formatAnswer = (content: string, lang?: string): string[] => {
@@ -724,12 +750,15 @@ function MessageComponent({
       : [];
 
   // Plain-text version of answer for copying
-  const answerPlainText = message.type === "answer"
-    ? [
-        message.content,
-        message.personalizedTips ? `\nTips:\n${message.personalizedTips}` : "",
-      ].join("")
-    : message.content;
+  const answerPlainText =
+    message.type === "answer"
+      ? [
+          message.content,
+          message.personalizedTips
+            ? `\nTips:\n${message.personalizedTips}`
+            : "",
+        ].join("")
+      : message.content;
 
   return (
     <div
@@ -743,46 +772,54 @@ function MessageComponent({
         <div
           style={{
             position: "absolute",
-            top: "-10px",
+            bottom: "-16px",
             right: "8px",
             display: "flex",
             gap: "4px",
             zIndex: 10,
           }}
         >
+          {/* Copy button */}
           <button
             onClick={() => onCopy(answerPlainText)}
-            title="Copy"
+            title={isCopied ? "Copied!" : "Copy"}
             style={{
-              padding: "3px 8px",
-              borderRadius: "6px",
-              border: "1px solid #d1d5db",
-              background: "#fff",
+              ...iconBtnBase,
               color: isCopied ? "#059669" : "#6b7280",
-              fontSize: "0.78em",
-              cursor: "pointer",
-              fontWeight: "600",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+              borderColor: isCopied ? "#6ee7b7" : "#e5e7eb",
             }}
           >
-            {isCopied ? "✓ Copied" : "📋 Copy"}
+            {isCopied ? <CheckIcon /> : <CopyIcon />}
           </button>
+
+          {/* Undo last button */}
+          <button
+            onClick={onUndo}
+            title="Undo last Q&A"
+            onMouseEnter={() => setUndoHovered(true)}
+            onMouseLeave={() => setUndoHovered(false)}
+            style={{
+              ...iconBtnBase,
+              color: undoHovered ? "#f59e0b" : "#6b7280",
+              borderColor: undoHovered ? "#fcd34d" : "#e5e7eb",
+            }}
+          >
+            <UndoIcon />
+          </button>
+
+          {/* Delete button */}
           <button
             onClick={onDelete}
-            title="Delete"
+            title="Delete this Q&A"
+            onMouseEnter={() => setDeleteHovered(true)}
+            onMouseLeave={() => setDeleteHovered(false)}
             style={{
-              padding: "3px 8px",
-              borderRadius: "6px",
-              border: "1px solid #fca5a5",
-              background: "#fff",
-              color: "#ef4444",
-              fontSize: "0.78em",
-              cursor: "pointer",
-              fontWeight: "600",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+              ...iconBtnBase,
+              color: deleteHovered ? "#ef4444" : "#6b7280",
+              borderColor: deleteHovered ? "#fca5a5" : "#e5e7eb",
             }}
           >
-            🗑️ Delete
+            <TrashIcon />
           </button>
         </div>
       )}
