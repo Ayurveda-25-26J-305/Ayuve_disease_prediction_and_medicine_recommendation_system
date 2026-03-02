@@ -468,28 +468,28 @@ Related Question: {question}
         topic_low = topic_raw if topic_raw else question.lower().strip('?').strip()
 
         # --- Dosha-specific tip templates ---
-        # Sentences are kept simple and short (no 'or' conjunctions) so Google Translate
-        # produces clean Sinhala without negation artifacts.
+        # Uses S-V-O sentence structure (no "to + infinitive" endings) so that
+        # Google Translate produces grammatically correct Sinhala output.
         templates = {
             'Vata': [
-                f"Mix {topic} with warm ghee before meals to ground Vata and improve absorption.",
-                f"Take {topic} at the same time each day to balance Vata's naturally irregular rhythm.",
-                f"Add a pinch of black pepper to {topic} preparations to enhance warmth and effectiveness for Vata.",
+                f"Mixing {topic} with warm ghee before meals helps ground Vata and improves nutrient absorption.",
+                f"Taking {topic} at the same time each day supports a balanced, regular rhythm for Vata types.",
+                f"Adding a pinch of black pepper to {topic} enhances its warming properties for Vata dosha.",
             ],
             'Pitta': [
-                f"Take {topic} in small amounts mixed with coconut milk to prevent excess Pitta heat.",
-                f"Use {topic} in the early morning before peak midday heat for best results in Pitta types.",
-                f"Add fennel to {topic} preparations to strengthen its cooling effect for Pitta dosha.",
+                f"{topic} mixed with a small amount of coconut milk helps calm excess Pitta heat effectively.",
+                f"Early morning is the ideal time for {topic} use, before Pitta energy peaks at midday.",
+                f"Fennel added to {topic} preparations strengthens its natural cooling properties for Pitta dosha.",
             ],
             'Kapha': [
-                f"Take {topic} with warm water and a pinch of black pepper to stimulate Kapha digestion.",
-                f"Use {topic} in the morning on an empty stomach to reduce excess Kapha heaviness.",
-                f"Mix {topic} with dry ginger to strengthen its warming and energising effect for Kapha.",
+                f"{topic} taken with warm water and a pinch of black pepper helps activate Kapha digestion.",
+                f"Morning use of {topic} on an empty stomach helps reduce excess Kapha heaviness gradually.",
+                f"Mixing {topic} with dry ginger strengthens its warming and energising effect for Kapha types.",
             ],
             'General': [
-                f"Add {topic} to your daily meals to support overall Ayurvedic health and wellness.",
-                f"Prepare {topic} as a warm herbal tea each morning for better absorption and digestion.",
-                f"Consult an Ayurvedic practitioner to determine the correct dosage of {topic} for your body type.",
+                f"Adding {topic} to daily meals supports overall Ayurvedic health and immune function.",
+                f"Preparing {topic} as a warm herbal tea each morning improves its absorption in the body.",
+                f"An Ayurvedic practitioner can help determine the correct dosage of {topic} for your body type.",
             ],
         }
 
@@ -656,6 +656,13 @@ Related Question: {question}
             ]
             if any(p in text.lower() for p in _trailing):
                 return None
+            # Reject incomplete/dangling sentences (LLM stopped mid-thought)
+            _dangling_re = _re.compile(
+                r'\b(may|might|could|would|should|which|that|when|where|because|'
+                r'due|and|but|if|since|after|before|the|a|an)\.$', _re.IGNORECASE
+            )
+            if _dangling_re.search(text):
+                return None
             # Truncate at 180 chars on word boundary
             if len(text) > 180:
                 text = text[:180].rsplit(' ', 1)[0].rstrip(',;')
@@ -692,9 +699,28 @@ Related Question: {question}
                 ]
                 if any(p in s.lower() for p in _trailing):
                     continue
+                # Reject incomplete/dangling sentences
+                _dang = _re.compile(
+                    r'\b(may|might|could|which|that|when|where|because|due|and|if|the|a|an)\.$',
+                    _re.IGNORECASE
+                )
+                if _dang.search(s):
+                    continue
                 bullet_points.append('\u2022 ' + s)
                 if len(bullet_points) >= 2:
                     break
+
+        # Relevance guard: prefer bullets that share at least one keyword with the question.
+        # This catches cases where the LLM hallucinates about a completely different topic.
+        _stop_words = {'the','are','what','is','of','for','in','and','to','a','an',
+                       'how','does','do','its','it','be','was','were','has','have',
+                       'this','that','with','by','at','on','from','their','which'}
+        q_words = {w for w in _re.findall(r'\b\w{3,}\b', question.lower()) if w not in _stop_words}
+        q_words.update(w for w in _re.findall(r'\b\w{3,}\b', search_query.lower()) if w not in _stop_words)
+        if q_words and bullet_points:
+            relevant = [b for b in bullet_points if any(w in b.lower() for w in q_words)]
+            if relevant:  # Only filter if at least one bullet is relevant
+                bullet_points = relevant
 
         base_answer = '\n'.join(bullet_points[:2]).strip()
         # Fallback: first 200 chars of raw text (ASCII + Sinhala only)
