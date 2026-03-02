@@ -549,15 +549,14 @@ Related Question: {question}
             detected_language = self.translator.detect_language(question)
             print(f"🌐 Detected language: {detected_language.upper()}")
             
-            if detected_language == 'si':
-                # Check if romanized (no Sinhala Unicode chars) or Sinhala script
+            if detected_language in ('si', 'ta'):
+                # Check if romanized (no Sinhala Unicode chars) or native script
                 is_romanized = not self.translator._has_sinhala_chars(question)
                 
                 if is_romanized:
-                    print(f"📝 Romanized Singlish detected (e.g., 'kurudu wala guna')")
+                    print(f"📝 Romanized input detected (e.g., 'kurudu wala guna')")
                 
-                # Translate Sinhala question to English for processing
-                # If romanized, will be transliterated first inside translate_si_to_en
+                # Translate question to English for processing
                 question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
                 print(f"🔄 Translated question: {question[:100]}...")
         
@@ -720,18 +719,49 @@ Related Question: {question}
                 display_answer = cleaned_translation.strip()
                 print(f"\u2713 Translation complete: {display_answer[:100]}...")
             elif raw_translation and raw_translation.strip():
-                # Cleanup removed too much — use raw translation
                 display_answer = raw_translation.strip()
                 print(f"\u26a0\ufe0f  Cleanup over-filtered, using raw translation")
             else:
                 print("⚠️  Translation returned empty, using English")
                 display_answer = final_answer
 
-        # Tips are always kept in English regardless of query language.
-        # Google Translate consistently corrupts compound Ayurvedic sentences
-        # (inserts 'ප්‍රයෝජනයක් නැත' for 'and'-joined predicates).
-        # English tips are clear and universally readable.
-        print("ℹ️  Skipping tips translation — keeping English tips for clean display")
+        elif self.enable_translation and self.translator and detected_language == 'ta':
+            # Tamil input → translate answer to Tamil
+            print("🔄 Translating answer to Tamil...")
+            simplified_english = self._simplify_for_translation(final_answer)
+            raw_translation = self.translator.translate_en_to_ta(simplified_english)
+            if raw_translation and raw_translation.strip():
+                display_answer = raw_translation.strip()
+                print(f"\u2713 Tamil translation complete: {display_answer[:100]}...")
+            else:
+                display_answer = final_answer
+
+        # Translate tips line-by-line to the user's language (Sinhala or Tamil).
+        # Per-line translation avoids the compound-sentence artefacts that appeared
+        # when translating the whole block at once.
+        import re as _re_tips
+        if self.enable_translation and self.translator and detected_language in ('si', 'ta') and personalized_tips:
+            print(f"🔄 Translating tips to {detected_language.upper()} (line by line)...")
+            translated_lines = []
+            for tip_line in personalized_tips.split('\n'):
+                tip_line = tip_line.strip()
+                if not tip_line:
+                    continue
+                # Strip number prefix, translate text, re-attach prefix
+                m = _re_tips.match(r'^(\d+\.\s*)', tip_line)
+                prefix = m.group(1) if m else ''
+                text = tip_line[len(prefix):].strip() if m else tip_line
+                simplified = self._simplify_for_translation(text)
+                if detected_language == 'si':
+                    translated = self.translator.translate_en_to_si(simplified)
+                else:
+                    translated = self.translator.translate_en_to_ta(simplified)
+                if translated and len(translated.strip()) > 5:
+                    translated_lines.append(f"{prefix}{translated.strip()}")
+                else:
+                    translated_lines.append(tip_line)  # keep English if fails
+            if translated_lines:
+                personalized_tips = '\n'.join(translated_lines)
 
         response = {
             "answer": display_answer,  # Answer in Sinhala for all Sinhala/Singlish inputs

@@ -264,8 +264,10 @@ class TranslationService:
             detected = self.language_detector.detect(clean_text)
             
             # Map to supported languages
-            if detected in ['si', 'ta']:  # Sinhala or Tamil (treat as Sinhala)
+            if detected in ['si']:  # Sinhala
                 return 'si'
+            elif detected in ['ta']:  # Tamil
+                return 'ta'
             elif detected == 'en':
                 return 'en'
             else:
@@ -495,6 +497,20 @@ class TranslationService:
             return result
         except Exception as e:
             logger.warning(f"translate_en_to_si failed: {e}")
+            return text  # fallback to English
+
+    def translate_en_to_ta(self, text: str) -> str:
+        """
+        Translate English text to Tamil using Google Translate.
+        """
+        try:
+            from deep_translator import GoogleTranslator
+            gt = GoogleTranslator(source='en', target='ta')
+            result = gt.translate(text)
+            logger.info(f"Google-translated en→ta: '{text[:60]}' → '{result[:60]}'")
+            return result
+        except Exception as e:
+            logger.warning(f"translate_en_to_ta failed: {e}")
             return text  # fallback to English
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> str:

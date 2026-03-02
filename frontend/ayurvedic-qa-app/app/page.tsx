@@ -631,18 +631,19 @@ function MessageComponent({ message }: { message: Message }) {
                 }}
               >
                 {answerPoints.length > 0 ? (
-                  <div style={{ lineHeight: "1.8", color: "#1f2937" }}>
+                  <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
                     {answerPoints.map((point, idx) => (
-                      <p
+                      <li
                         key={idx}
                         style={{
-                          margin: idx < answerPoints.length - 1 ? "0 0 8px 0" : "0",
+                          marginBottom: idx < answerPoints.length - 1 ? "8px" : 0,
+                          color: "#1f2937",
                         }}
                       >
                         {point}
-                      </p>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 ) : (
                   <div>{message.content}</div>
                 )}
@@ -729,7 +730,13 @@ function MessageComponent({ message }: { message: Message }) {
                             lineHeight: "1.7",
                           }}
                         >
-                          <span style={{ color: "#7c3aed", fontWeight: "700", minWidth: "20px" }}>
+                          <span
+                            style={{
+                              color: "#7c3aed",
+                              fontWeight: "700",
+                              minWidth: "20px",
+                            }}
+                          >
                             {idx + 1}.
                           </span>
                           <span>{line.replace(/^\d+\.\s*/, "")}</span>
@@ -756,10 +763,10 @@ function MessageComponent({ message }: { message: Message }) {
               >
                 <span>🌐</span>
                 <span style={{ color: "#2563eb", fontWeight: "600" }}>
-                  Sinhala detected
+                  {message.detectedLanguage === "ta" ? "Tamil detected" : "Sinhala detected"}
                 </span>
                 <span style={{ color: "#6b7280", fontSize: "0.85em" }}>
-                  • Answer translated to Sinhala
+                  • Answer translated to {message.detectedLanguage === "ta" ? "Tamil" : "Sinhala"}
                 </span>
               </div>
             )}
