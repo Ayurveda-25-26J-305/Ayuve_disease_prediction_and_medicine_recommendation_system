@@ -192,8 +192,13 @@ Related Question: {question}
             if re.search(r'\b(source|citation|reference)\b', low) and \
                re.search(r'\b(states?|says?|mentions?|notes?|reports?|indicates?|describes?)\b', low):
                 continue
-            # Reject sentences that are pure bibliography/chapter/verse markers
+            # Reject sentences that are pure bibliography/chapter/verse/page markers
             if re.search(r'\b(chapter|verse|bibliography|ibid)\b', low):
+                continue
+            if re.search(r'\bpage\s*no\.?\b|\bline\s+number\b|\bpage\s+\d+\b', low):
+                continue
+            # Reject very long run-on sentences that are likely raw scripture dumps (>300 chars, no clear benefit)
+            if len(s) > 300 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?|relieves?)\b', low):
                 continue
             # Ensure sentence ends with proper punctuation
             if not s[-1] in '.!?':
@@ -203,15 +208,29 @@ Related Question: {question}
             clean.append(s)
 
         if not clean:
-            # Fallback: split raw into sentences and take first 3 as bullets
+            # Fallback: split raw into sentences, apply same scripture filters, take first 3
             fallback_sentences = re.split(r'(?<=[.!?])\s+', raw.strip())
+            # If one long paragraph with no sentence breaks, try comma+capital split
+            if len(fallback_sentences) == 1 and len(fallback_sentences[0]) > 200:
+                fallback_sentences = re.split(r',\s+(?=[A-Z])', raw.strip())
             fallback_clean = []
             for s in fallback_sentences:
                 s = s.strip()
-                if len(s) > 15:
-                    if s[-1] not in '.!?':
-                        s = s + '.'
-                    fallback_clean.append(s[0].upper() + s[1:])
+                if len(s) < 15:
+                    continue
+                low_s = s.lower()
+                if re.search(r'\b(chapter|verse|bibliography|ibid)\b', low_s):
+                    continue
+                if re.search(r'\bpage\s*no\.?\b|\bline\s+number\b|\bpage\s+\d+\b', low_s):
+                    continue
+                if re.search(r'\b(source|citation|reference)\b', low_s) and \
+                   re.search(r'\b(states?|says?|mentions?|notes?|reports?|indicates?|describes?)\b', low_s):
+                    continue
+                if len(s) > 300 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?)\b', low_s):
+                    continue
+                if s[-1] not in '.!?':
+                    s = s + '.'
+                fallback_clean.append(s[0].upper() + s[1:])
             if fallback_clean:
                 return '\n'.join(f'\u2022 {b}' for b in fallback_clean[:3])
             return raw.strip()
@@ -574,14 +593,28 @@ Related Question: {question}
             pass
 
         topic_raw = _re.sub(
-            r'^(what are the benefits of|what are the uses of|what is the use of|'
-            r'what is|how does|benefits of|uses of|properties of|'
-            r'tell me about|explain|describe)\s+',
+            r'^(what are the (?:ayurvedic\s+)?(?:benefits|uses|properties|effects|qualities|guna)\s+of|'
+            r'what are the benefits of|what are the uses of|what is the use of|'
+            r'what are the|what are|what is the|what is|'
+            r'how does|how is|how can|benefits of|uses of|properties of|effects of|'
+            r'tell me about|tell me the|explain|describe|'
+            r'what dosha does|which dosha)\s+',
             '', _source_q.lower(), flags=_re.IGNORECASE
         ).strip().strip('?').strip()
 
+        # If result has "of <herb>" inside it, extract just the herb (e.g. "ayurvedic properties of ginger" → "ginger")
+        _of_match = _re.search(r'\bof\s+(.+)$', topic_raw)
+        if _of_match:
+            topic_raw = _of_match.group(1).strip()
+
+        # Strip trailing verb phrases: "help digestion", "help with skin", "balance dosha", etc.
+        topic_raw = _re.sub(
+            r'\s+(help\s*\w*|helps?|reduce\w*|balance\w*|support\w*|cure\w*|treat\w*|do|does|is|are|used|with|for).*$',
+            '', topic_raw, flags=_re.IGNORECASE
+        ).strip()
+
         # Remove trailing filler words
-        topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body)$', '', topic_raw).strip()
+        topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body|for|in|to|with|a|an|the)$', '', topic_raw, flags=_re.IGNORECASE).strip()
 
         # Guard: if topic_raw is generic/bad (e.g. "are they useful", "it", "they"),
         # fall back to the original question directly
@@ -715,8 +748,8 @@ Related Question: {question}
                 "role": "user",
                 "content": (
                     f"You are an Ayurvedic knowledge assistant. "
-                    f"Using ONLY the sources below, write a clear answer in 2-3 sentences. "
-                    f"State health facts directly. Do NOT say 'According to', do NOT name book titles or sources.\n\n"
+                    f"Using ONLY the sources below, list 2-3 specific health benefits as short direct sentences. "
+                    f"Start with the herb/ingredient name and its specific benefit (e.g. 'Turmeric reduces inflammation'). Do NOT say 'According to', do NOT name book titles or sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}"
                 )

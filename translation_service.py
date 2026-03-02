@@ -157,6 +157,17 @@ SINHALA_TO_ENGLISH_DICT = {
     'thippili': 'long pepper', 'gammiris': 'black pepper',
     'welpenela': 'aloe vera', 'komarika': 'neem',
     'raththran': 'sandalwood', 'venivel': 'coscinium',
+    'kottamalli': 'coriander', 'kothamalli': 'coriander',
+    'nelli': 'gooseberry', 'nellie': 'gooseberry',
+    'kohomba': 'neem', 'kohumba': 'neem',
+    'mukunuwenna': 'sessile joyweed',
+    'ranawara': 'senna',
+    'beli': 'bael fruit',
+    'thibbatu': 'turkey berry',
+    'iramusu': 'false sarsaparilla',
+    'polpala': 'aerva lanata',
+    'hathawariya': 'asparagus',
+    'thebu': 'costus',
     
     # Prepositions/Particles
     'wala': 'of', 'walata': 'for',
