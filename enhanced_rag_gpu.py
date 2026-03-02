@@ -566,8 +566,8 @@ Related Question: {question}
             top_context_docs = retrieved_docs[:top_k]
             print(f"⚠️  No book sources found, using QA entries")
         
-        # Token budget — 400 gives room for 3 complete bullet points with context
-        dynamic_tokens = 400
+        # Token budget — 300 gives room for 2 complete bullet points with context
+        dynamic_tokens = 300
             
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
@@ -576,19 +576,20 @@ Related Question: {question}
         
         # Build messages — use generate_from_messages() so special tokens are
         # encoded directly and never corrupted by a string round-trip.
-        context_summary = context_text[:1200]  # ~300 tokens of context
+        context_summary = context_text[:800]  # ~200 tokens of context
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are an Ayurvedic health assistant. "
-                    "You MUST respond with EXACTLY 3 bullet points, no more, no less. "
-                    "Use the • symbol to start each bullet. "
-                    "Each bullet is ONE complete sentence describing a specific health benefit or use. "
-                    "Read the sources carefully and extract 3 different facts. "
-                    "Ignore book titles, chapter names, verse numbers, and table-of-contents entries. "
-                    "Do NOT mention book names. "
-                    "Do NOT add any introduction or conclusion — output ONLY the 3 bullet lines."
+                    "Your job: read the sources and list specific health benefits, uses, or facts. "
+                    "Format: exactly 2 bullet points using the • symbol. "
+                    "Each bullet = one clear, specific benefit or use in one sentence. "
+                    "IMPORTANT: Ignore any book titles, chapter names, verse numbers, "
+                    "or table-of-contents text you see in the sources — only extract health facts. "
+                    "Do NOT mention book names or source references in your answer. "
+                    "Do NOT start with 'Ayurveda provides', 'Based on', or 'According to'. "
+                    "Do NOT end with 'Follow these guidelines' or similar closings."
                 )
             },
             {
@@ -596,7 +597,7 @@ Related Question: {question}
                 "content": (
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}\n\n"
-                    f"Write exactly 3 bullet points (starting with \u2022) that answer the question above."
+                    f"List 2 specific health benefits or uses that directly answer this question."
                 )
             }
         ]
@@ -608,11 +609,10 @@ Related Question: {question}
 
         import re as _re
 
-        # Garbage / corruption pattern (URLs, broken markdown links, special tokens)
+        # Garbage / corruption pattern
         _garbage_re = _re.compile(
             r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
-            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY|'
-            r'https?://|\]\(http|BookStore|PricedMed|TextBook'
+            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY'
         )
 
         # --- Step 1: Strip LLM preamble lines ---
@@ -661,7 +661,7 @@ Related Question: {question}
                 cleaned = _clean_bullet_line(stripped)
                 if cleaned:
                     bullet_points.append(cleaned)
-            if len(bullet_points) >= 3:
+            if len(bullet_points) >= 2:
                 break
 
         # --- Step 3: Fallback — sentence extractor if bullets not found ---
@@ -679,10 +679,10 @@ Related Question: {question}
                 if any(p in s.lower() for p in _trailing):
                     continue
                 bullet_points.append('\u2022 ' + s)
-                if len(bullet_points) >= 3:
+                if len(bullet_points) >= 2:
                     break
 
-        base_answer = '\n'.join(bullet_points[:3]).strip()
+        base_answer = '\n'.join(bullet_points[:2]).strip()
         # Fallback: first 200 chars of raw text (ASCII + Sinhala only)
         if not base_answer:
             base_answer = _re.sub(r'[^\x20-\x7E\u0D80-\u0DFF\s]', '', raw_answer).strip()[:200]
