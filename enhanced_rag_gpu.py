@@ -468,28 +468,28 @@ Related Question: {question}
         topic_low = topic_raw if topic_raw else question.lower().strip('?').strip()
 
         # --- Dosha-specific tip templates ---
-        # Uses S-V-O sentence structure (no "to + infinitive" endings) so that
-        # Google Translate produces grammatically correct Sinhala output.
+        # Pure Subject + Verb + Object sentences only.
+        # No gerunds, no participials, no "to + infinitive" — avoids Google Translate Sinhala artefacts.
         templates = {
             'Vata': [
-                f"Mixing {topic} with warm ghee before meals helps ground Vata and improves nutrient absorption.",
-                f"Taking {topic} at the same time each day supports a balanced, regular rhythm for Vata types.",
-                f"Adding a pinch of black pepper to {topic} enhances its warming properties for Vata dosha.",
+                f"Warm ghee improves the potency of {topic} and supports Vata balance every day.",
+                f"{topic} stabilises Vata energy when consumed at the same time each morning.",
+                f"Black pepper increases the warmth of {topic} and supports healthy Vata digestion.",
             ],
             'Pitta': [
-                f"{topic} mixed with a small amount of coconut milk helps calm excess Pitta heat effectively.",
-                f"Early morning is the ideal time for {topic} use, before Pitta energy peaks at midday.",
-                f"Fennel added to {topic} preparations strengthens its natural cooling properties for Pitta dosha.",
+                f"Coconut milk reduces the heating effect of {topic} and keeps Pitta dosha in balance.",
+                f"{topic} works best in early morning, before Pitta energy rises at noon.",
+                f"Fennel seeds cool the body when used together with {topic} for Pitta dosha.",
             ],
             'Kapha': [
-                f"{topic} taken with warm water and a pinch of black pepper helps activate Kapha digestion.",
-                f"Morning use of {topic} on an empty stomach helps reduce excess Kapha heaviness gradually.",
-                f"Mixing {topic} with dry ginger strengthens its warming and energising effect for Kapha types.",
+                f"Black pepper and warm water activate the digestive benefits of {topic} for Kapha dosha.",
+                f"{topic} reduces Kapha heaviness when consumed on an empty stomach each morning.",
+                f"Dry ginger increases the warming energy of {topic} and reduces Kapha sluggishness.",
             ],
             'General': [
-                f"Adding {topic} to daily meals supports overall Ayurvedic health and immune function.",
-                f"Preparing {topic} as a warm herbal tea each morning improves its absorption in the body.",
-                f"An Ayurvedic practitioner can help determine the correct dosage of {topic} for your body type.",
+                f"{topic} supports Ayurvedic health and immunity when consumed daily with meals.",
+                f"A warm cup of {topic} tea each morning increases its absorption in the body.",
+                f"An Ayurvedic practitioner recommends the correct dose of {topic} for each body type.",
             ],
         }
 
@@ -611,10 +611,11 @@ Related Question: {question}
 
         import re as _re
 
-        # Garbage / corruption pattern
+        # Garbage / corruption pattern (includes citation/reference artefacts)
         _garbage_re = _re.compile(
             r'_[A-Z]{2,}|<\||/{3,}|\*\*[A-Z]|hencefortieth|unambiguously|'
-            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY'
+            r'herewith|congruently|particularities|\.Claiming|RESERVED|POTENTIALLY|'
+            r'Journal\s+[Oo]f|\([12]\d{3}\)|[A-Za-z]\)|\bVol\.?\s*\d|\bpp?\.\s*\d'
         )
 
         # --- Step 1: Strip LLM preamble lines ---
@@ -659,7 +660,8 @@ Related Question: {question}
             # Reject incomplete/dangling sentences (LLM stopped mid-thought)
             _dangling_re = _re.compile(
                 r'\b(may|might|could|would|should|which|that|when|where|because|'
-                r'due|and|but|if|since|after|before|the|a|an)\.$', _re.IGNORECASE
+                r'due|and|but|if|since|after|before|the|a|an|such|including|'
+                r'these|those|as|its|their|other|various|many|some)\.$', _re.IGNORECASE
             )
             if _dangling_re.search(text):
                 return None
@@ -701,7 +703,8 @@ Related Question: {question}
                     continue
                 # Reject incomplete/dangling sentences
                 _dang = _re.compile(
-                    r'\b(may|might|could|which|that|when|where|because|due|and|if|the|a|an)\.$',
+                    r'\b(may|might|could|which|that|when|where|because|due|and|if|'
+                    r'the|a|an|such|including|these|those|as|its|their|other|various|many|some)\.$',
                     _re.IGNORECASE
                 )
                 if _dang.search(s):
