@@ -631,12 +631,19 @@ function MessageComponent({ message }: { message: Message }) {
                 }}
               >
                 {answerPoints.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: "20px",
+                      lineHeight: "1.8",
+                    }}
+                  >
                     {answerPoints.map((point, idx) => (
                       <li
                         key={idx}
                         style={{
-                          marginBottom: idx < answerPoints.length - 1 ? "8px" : 0,
+                          marginBottom:
+                            idx < answerPoints.length - 1 ? "8px" : 0,
                           color: "#1f2937",
                         }}
                       >
@@ -763,10 +770,13 @@ function MessageComponent({ message }: { message: Message }) {
               >
                 <span>🌐</span>
                 <span style={{ color: "#2563eb", fontWeight: "600" }}>
-                  {message.detectedLanguage === "ta" ? "Tamil detected" : "Sinhala detected"}
+                  {message.detectedLanguage === "ta"
+                    ? "Tamil detected"
+                    : "Sinhala detected"}
                 </span>
                 <span style={{ color: "#6b7280", fontSize: "0.85em" }}>
-                  • Answer translated to {message.detectedLanguage === "ta" ? "Tamil" : "Sinhala"}
+                  • Answer translated to{" "}
+                  {message.detectedLanguage === "ta" ? "Tamil" : "Sinhala"}
                 </span>
               </div>
             )}
