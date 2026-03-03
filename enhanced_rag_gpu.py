@@ -184,7 +184,21 @@ Related Question: {question}
             'all text', 'text extract', 'all the text', 'extract required',
             'personalized for', '**personalized', '*personalized',
             'in conclusion', 'to summarize', 'to sum up',
+            # Informal / hallucination sentence starters
+            'so there', 'there ya', 'but heed', 'heed my', 'those tiny',
+            'mighty power', 'magic potion', 'just cuz', 'sorted down',
+            'but remember', 'but note', 'folks don', 'as per source',
+            'this way of', 'this herbal', 'maximally drink', 'follow this pattern',
+            'secondary part', 'no longer', 'first thing in morning',
         ]
+        # Also reject sentences containing strongly informal/hallucinated markers mid-sentence
+        INFORMAL_REJECT = re.compile(
+            r'\b(ya\s+go|folks|heed\s+my|tiny\s+grain|mighty\s+power|magic\s+potion|'
+            r'just\s+cuz|sorted\s+down|those\s+tiny|cow.s\s+udder|udder|'
+            r'clockwork|there\s+ya|maximally\s+drink|no\s+longer\s+\.|'
+            r'first\s+thing\s+in\s+morning)\b',
+            re.IGNORECASE
+        )
         clean = []
         for s in expanded:
             s = s.strip().rstrip('.,;- ')
@@ -207,6 +221,9 @@ Related Question: {question}
                 continue
             # Reject LLM meta-commentary: "extracted information", "pertaining", "constraints", etc.
             if re.search(r'\b(pertaining|verbatim|constraints?|extracted\s+information|pertainingsource|directly\s+mentioned)\b', low):
+                continue
+            # Reject sentences with informal/hallucinated language markers
+            if INFORMAL_REJECT.search(s):
                 continue
             # Reject run-on sentences with no benefit verb (>250 chars)
             if len(s) > 250 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?|relieves?|contains?|promotes?)\b', low):
@@ -656,6 +673,13 @@ Related Question: {question}
             'herbs', 'herb', 'vata', 'pitta', 'kapha', 'dosha', 'tridosha',
             'prakriti', 'dhatu', 'agni', 'ojas', 'prana', 'ayurveda', 'which',
             'food', 'foods', 'medicine', 'treatment', 'help', 'imbalance',
+            # Action/question words that slip through prefix stripping
+            'take', 'taking', 'taken', 'recommended', 'meaning', 'means',
+            'combine', 'combined', 'combining', 'together', 'good', 'correct',
+            'ratio', 'time', 'when', 'where', 'why', 'could', 'would', 'might',
+            'mean', 'general', 'use', 'using', 'used', 'consume', 'consumption',
+            'daily', 'morning', 'evening', 'right', 'proper', 'best',
+            'health', 'body', 'blood', 'sugar', 'water', 'milk', 'intake',
         }
         topic_words = set(topic_raw.lower().split())
         _is_bad_topic = not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics)
@@ -695,12 +719,25 @@ Related Question: {question}
         }
 
         # --- Step 2: Select templates based on dosha AND question type ---
+        # Two flavour groups per benefit type — picked by topic's first letter so
+        # the same herb always gets the same set, but different herbs get different tips.
+        _grp = ord(topic[0].lower()) % 2 if topic else 0  # 0 or 1
+
         dosha_tips = {
             'Vata': {
                 'benefit': [
-                    f"{topic} reduces Vata dryness and supports joint and nerve health when taken with warm ghee.",
-                    f"Mixing {topic} with warm sesame oil or milk helps the body absorb it and calms Vata.",
-                    f"Regular use of {topic} in the morning with a glass of warm water balances Vata energy.",
+                    # Flavour A — grounding / nourishment focus
+                    [
+                        f"{topic} reduces Vata dryness and supports joint and nerve health when taken with warm ghee.",
+                        f"Mixing {topic} with warm sesame oil or milk helps the body absorb it and calms Vata anxiety.",
+                        f"Take {topic} regularly in the morning with warm water to build a grounding Vata daily routine.",
+                    ],
+                    # Flavour B — warmth / circulation focus
+                    [
+                        f"{topic} warms and nourishes the Vata body by improving circulation and reducing cold sensitivity.",
+                        f"For Vata types, {topic} works best as a warm drink with a pinch of cardamom before meals.",
+                        f"Consistent daily use of {topic} for 4 weeks helps settle Vata restlessness and irregular digestion.",
+                    ],
                 ],
                 'dosage': [
                     f"Take {topic} in small amounts — start with a pinch or quarter teaspoon and adjust slowly.",
@@ -710,57 +747,84 @@ Related Question: {question}
                 'sideeff': [
                     f"{topic} is generally well tolerated for Vata types when taken in small, consistent amounts.",
                     f"Avoid taking {topic} on an empty stomach if it causes gas or bloating, which Vata types can experience.",
-                    f"Combining {topic} with warm ghee or milk reduces any drying or irritating effects on the Vata system.",
+                    f"Taking {topic} with warm ghee or milk reduces any drying or irritating effects on the Vata system.",
                 ],
             },
             'Pitta': {
                 'benefit': [
-                    f"{topic} cools Pitta heat and helps reduce inflammation and acidity in the digestive system.",
-                    f"Taking {topic} with coconut milk or aloe vera juice enhances its cooling benefits for Pitta types.",
-                    f"Use {topic} in early morning, before Pitta energy peaks, to get the strongest calming effect.",
+                    # Flavour A — cooling / anti-inflammation focus
+                    [
+                        f"{topic} helps reduce Pitta-related heat and inflammation — take it with cool water or coconut milk.",
+                        f"For Pitta types, {topic} works best when taken in the morning before Pitta energy builds up.",
+                        f"Pair {topic} with cooling foods like cucumber, mint, and fresh coconut to boost its Pitta-calming effect.",
+                    ],
+                    # Flavour B — digestion / steady use focus
+                    [
+                        f"{topic} supports healthy Pitta digestion and reduces acid build-up when taken after meals.",
+                        f"For Pitta types, {topic} is most effective at room temperature — avoid hot water preparations.",
+                        f"Use {topic} consistently for 2–4 weeks to see steady improvement in Pitta-related digestion and skin.",
+                    ],
                 ],
                 'dosage': [
-                    f"Take {topic} in moderate amounts — excess heat can increase Pitta irritation with high doses.",
+                    f"Take {topic} in moderate amounts — too high a dose can overheat the Pitta system.",
                     f"A cool or room-temperature preparation of {topic} works better than hot preparations for Pitta types.",
-                    f"An Ayurvedic practitioner can recommend the balanced dose of {topic} for your Pitta constitution.",
+                    f"An Ayurvedic practitioner can recommend the right balanced dose of {topic} for your Pitta constitution.",
                 ],
                 'sideeff': [
-                    f"{topic} is safe for Pitta when taken in moderate amounts and avoided during active inflammation.",
-                    f"If {topic} increases heat or causes acidity, reduce the dose and take it with cooling fennel water.",
-                    f"Avoid combining {topic} with spicy or sour foods, as this can amplify Pitta side effects.",
+                    f"{topic} is safe for Pitta when taken in moderate amounts and not during active inflammation flare-ups.",
+                    f"If {topic} increases body heat or causes acidity, reduce the dose and take it with cooling fennel water.",
+                    f"Avoid combining {topic} with spicy or very sour foods, as this can make Pitta side effects worse.",
                 ],
             },
             'Kapha': {
                 'benefit': [
-                    f"{topic} reduces Kapha heaviness and stimulates metabolism and digestion when taken regularly.",
-                    f"Taking {topic} with black pepper and warm water activates its digestive benefits for Kapha types.",
-                    f"Dry-roasted {topic} with a pinch of ginger removes Kapha sluggishness from the digestive tract.",
+                    # Flavour A — metabolism / digestion focus
+                    [
+                        f"{topic} reduces Kapha heaviness and stimulates metabolism and digestion when taken regularly.",
+                        f"Taking {topic} with black pepper and warm water activates its digestive benefits for Kapha types.",
+                        f"Use {topic} before breakfast on an empty stomach to clear Kapha sluggishness from the digestive tract.",
+                    ],
+                    # Flavour B — energy / weight focus
+                    [
+                        f"{topic} helps Kapha types by breaking down excess mucus and improving morning energy levels.",
+                        f"Combine {topic} with a light diet and 20 minutes of brisk morning walking to add to its Kapha-clearing effect.",
+                        f"For Kapha types, {topic} is most powerful with warm ginger water — avoid taking it with heavy meals.",
+                    ],
                 ],
                 'dosage': [
-                    f"Kapha types can take a slightly higher dose of {topic} as their metabolism tolerates it well.",
+                    f"Kapha types can take a slightly higher dose of {topic} as their metabolism handles it well.",
                     f"Take {topic} on an empty stomach each morning with warm water for the best Kapha-clearing effect.",
                     f"An Ayurvedic practitioner can confirm the right daily quantity of {topic} for your Kapha body type.",
                 ],
                 'sideeff': [
-                    f"{topic} is well suited for Kapha types and side effects are rare when used in normal quantities.",
-                    f"If {topic} causes heaviness or congestion, combine it with dry ginger to counteract Kapha excess.",
-                    f"Avoid taking {topic} with cold or sweet foods, as this can increase Kapha and reduce its benefits.",
+                    f"{topic} is well suited to Kapha types and side effects are rare when used in normal daily amounts.",
+                    f"If {topic} causes heaviness or congestion, add dry ginger to your preparation to counteract Kapha buildup.",
+                    f"Avoid taking {topic} with cold or sweet foods, as this increases Kapha and reduces its benefits.",
                 ],
             },
             'General': {
                 'benefit': [
-                    f"{topic} supports general Ayurvedic health and immunity when consumed daily with meals.",
-                    f"A warm preparation of {topic} each morning increases its bioavailability in the body.",
-                    f"An Ayurvedic practitioner can recommend the right form and dose of {topic} for your body type.",
+                    # Flavour A
+                    [
+                        f"{topic} supports general Ayurvedic health and immunity when consumed daily with meals.",
+                        f"A warm preparation of {topic} each morning increases its absorption and daily health benefits.",
+                        f"An Ayurvedic practitioner can recommend the right form and dose of {topic} for your body type.",
+                    ],
+                    # Flavour B
+                    [
+                        f"{topic} is a well-known Ayurvedic herb used daily to support digestion, energy, and immunity.",
+                        f"For best results, take {topic} consistently each day rather than on and off.",
+                        f"Pair {topic} with plenty of warm water and a balanced diet to get its full health benefits.",
+                    ],
                 ],
                 'dosage': [
                     f"Start with a small daily amount of {topic} and observe how your body responds before increasing.",
-                    f"{topic} is best taken with warm water in the morning to maximise its daily benefits.",
+                    f"{topic} is best taken with warm water in the morning to get its full daily benefits.",
                     f"Consult an Ayurvedic practitioner for the correct dose of {topic} suited to your constitution.",
                 ],
                 'sideeff': [
-                    f"{topic} is generally safe when used in traditional Ayurvedic amounts and preparations.",
-                    f"If you experience discomfort after taking {topic}, reduce the amount and take it with food.",
+                    f"{topic} is generally safe when used in traditional Ayurvedic amounts and standard preparations.",
+                    f"If you feel any discomfort after taking {topic}, reduce the amount and always take it with food.",
                     f"Consult an Ayurvedic practitioner before long-term daily use of {topic} for your body type.",
                 ],
             },
@@ -788,8 +852,13 @@ Related Question: {question}
         else:
             q_type = 'benefit'
 
-        tips = dosha_tips[dosha_key][q_type]
-        print(f"✓ Tips generated for {dosha_key}/{q_type} — topic: '{topic}'")
+        tip_set = dosha_tips[dosha_key][q_type]
+        # For benefit type, pick between flavour A (index 0) and B (index 1) by topic hash
+        if q_type == 'benefit' and isinstance(tip_set[0], list):
+            tips = tip_set[_grp]
+        else:
+            tips = tip_set
+        print(f"✓ Tips generated for {dosha_key}/{q_type} (flavour {_grp}) — topic: '{topic}'")
         return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
     def answer_question(
