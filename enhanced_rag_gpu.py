@@ -180,6 +180,10 @@ Related Question: {question}
             'these details', 'this might not', 'this does not', 'there appears',
             'it does not', "it doesn't", 'not necessarily', 'if they don',
             'the information about', 'there is no', 'there are no',
+            # More garbage patterns
+            'all text', 'text extract', 'all the text', 'extract required',
+            'personalized for', '**personalized', '*personalized',
+            'in conclusion', 'to summarize', 'to sum up',
         ]
         clean = []
         for s in expanded:
@@ -597,6 +601,7 @@ Related Question: {question}
         except Exception:
             pass
 
+        # Step 1: Extract topic — detect question type first (before stripping prefix)
         _q = _source_q.lower()
 
         # Remove the "(regarding: ...)" context suffix that buildQuestion appends
@@ -607,6 +612,11 @@ Related Question: {question}
         _is_sideeff  = bool(_re.search(r'\b(side effect|harm|danger|safe|risk|caution|warning)\b', _q))
         _is_howto    = bool(_re.search(r'\b(how to use|how to take|how to consume|how to prepare)\b', _q))
 
+        # Detect if question is about a dosha/concept rather than a specific herb
+        _is_concept  = bool(_re.search(r'\b(what is|what are|explain|describe)\b', _q) and
+                           _re.search(r'\b(vata|pitta|kapha|dosha|tridosha|ayurveda|prakriti|dhatu|agni)\b', _q))
+        _is_which_herbs = bool(_re.search(r'\bwhich\s+herb|what\s+herbs?\b', _q))
+
         # Strip common question prefixes to isolate the herb/topic
         topic_raw = _re.sub(
             r'^(what are the (?:ayurvedic\s+)?(?:benefits|uses|properties|effects|qualities|guna)\s+of|'
@@ -616,7 +626,7 @@ Related Question: {question}
             r'are there any|is there any|can i use|should i take|can i take|should i|'
             r'tell me about|tell me the|explain|describe|'
             r'benefits of|uses of|properties of|effects of|'
-            r'what dosha does|which dosha)\s+',
+            r'what dosha does|which dosha|which herb|which herbs)\s+',
             '', _q, flags=_re.IGNORECASE
         ).strip().strip('?').strip()
 
@@ -642,15 +652,47 @@ Related Question: {question}
             'benefits', 'guna', 'monawada', 'what', 'how', 'does', 'do',
             'much', 'many', 'often', 'any', 'there', 'can', 'should',
             'side', 'effects', 'safe', 'dosage', 'dose', 'amount', 'long',
+            # Dosha and concept words — not specific herbs
+            'herbs', 'herb', 'vata', 'pitta', 'kapha', 'dosha', 'tridosha',
+            'prakriti', 'dhatu', 'agni', 'ojas', 'prana', 'ayurveda', 'which',
+            'food', 'foods', 'medicine', 'treatment', 'help', 'imbalance',
         }
         topic_words = set(topic_raw.lower().split())
-        if not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics):
+        _is_bad_topic = not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics)
+
+        if _is_bad_topic:
             # Last resort: first known-herb word from original question
             _words = [w for w in _re.findall(r'\b[a-zA-Z]{4,}\b', original_question + ' ' + question)
-                      if w.lower() not in _bad_topics | {'wala', 'what', 'guna', 'monawada', 'regarding', 'causes', 'cause', 'vata', 'pitta', 'kapha', 'dosha', 'imbalance'}]
-            topic_raw = _words[0] if _words else 'this herb'
+                      if w.lower() not in _bad_topics | {'wala', 'what', 'guna', 'monawada', 'regarding',
+                                                         'causes', 'cause', 'imbalance', 'question', 'answer'}]
+            topic_raw = _words[0] if _words else ''
+            _is_bad_topic = not topic_raw or len(topic_raw) < 3
 
-        topic = topic_raw.title()
+        topic = topic_raw.title() if topic_raw else ''
+
+        # --- Step 2: Concept tips (dosha/general questions with no specific herb) ---
+        concept_tips = {
+            'Vata': [
+                "Keep regular daily routines — fixed meal times and sleep schedules are the best way to calm Vata.",
+                "Eat warm, cooked, and slightly oily foods like rice with ghee, soups, and root vegetables.",
+                "Gentle oil massage on the body before bathing helps reduce Vata dryness and anxiety.",
+            ],
+            'Pitta': [
+                "Eat cooling foods like cucumber, coconut, and fresh greens to reduce Pitta heat in the body.",
+                "Avoid spicy, fried, or very sour foods — these increase Pitta and cause irritation and acidity.",
+                "Spending time in nature, cool showers, and short daily meditation help balance Pitta energy.",
+            ],
+            'Kapha': [
+                "Eat light, warm, and dry foods — avoid heavy, oily, or sweet foods that slow down Kapha.",
+                "Regular brisk exercise every morning is the best way to reduce Kapha heaviness and weight.",
+                "Wake up before sunrise and avoid daytime naps to keep Kapha energy active and clear.",
+            ],
+            'General': [
+                "Eat fresh, seasonal, and lightly cooked foods every day for good health in Ayurveda.",
+                "Regular sleep, daily exercise, and consistent meal times form the foundation of Ayurvedic wellbeing.",
+                "Consult an Ayurvedic practitioner to find the right diet and herbs for your body type.",
+            ],
+        }
 
         # --- Step 2: Select templates based on dosha AND question type ---
         dosha_tips = {
@@ -730,6 +772,13 @@ Related Question: {question}
             if d in dosha:
                 dosha_key = d
                 break
+
+        # If no valid herb/topic was found (concept question like "what is pitta?"),
+        # skip herb tips and use general dosha lifestyle advice
+        if _is_bad_topic or _is_concept or _is_which_herbs:
+            tips = concept_tips[dosha_key]
+            print(f"✓ Concept tips generated for {dosha_key} (no herb topic found)")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
         # Select template variant based on question type
         if _is_sideeff:
@@ -822,9 +871,12 @@ Related Question: {question}
             {
                 "role": "user",
                 "content": (
-                    f"You are an Ayurvedic knowledge assistant. "
-                    f"Using ONLY the sources below, list 2-3 specific health benefits as short direct sentences. "
-                    f"Start with the herb/ingredient name and its specific benefit (e.g. 'Turmeric reduces inflammation'). Do NOT say 'According to', do NOT name book titles or sources.\n\n"
+                    f"You are an Ayurvedic health assistant. "
+                    f"Using ONLY the sources below, write 2-3 short sentences that directly answer the question. "
+                    f"Use simple everyday English that anyone can understand — do NOT use heavy Ayurvedic, medical, or scientific terms. "
+                    f"Start each sentence with a subject (herb name, dosha name, or food) followed by what it does. "
+                    f"Example: 'Turmeric reduces swelling in the body.' or 'Vata dosha controls movement and breathing.' "
+                    f"Do NOT say 'According to', do NOT mention book titles or sources.\n\n"
                     f"Sources:\n{context_summary}\n\n"
                     f"Question: {question}"
                 )
@@ -841,6 +893,12 @@ Related Question: {question}
         raw_answer = raw_answer.strip()
 
         # Restructure: strip attribution/source noise, extract 2 clean bullet facts
+        # First, strip any "**Personalized for X Constitution:**" block the LLM may have added
+        import re as _re_raw
+        raw_answer = _re_raw.sub(
+            r'\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
+            '', raw_answer, flags=_re_raw.IGNORECASE
+        ).strip()
         base_answer = self._restructure_answer(raw_answer, question=question)
 
         print(f"✅ Generation complete!")
@@ -875,7 +933,13 @@ Related Question: {question}
             )
             is_personalized = True
 
-        # Detect dosha and generate personalized tips (always, regardless of user profile)
+        # Strip "**Personalized for X Constitution:**" suffix that the personalizer LLM appends
+        # — this is already shown separately via template tips; we don't want it in the answer bubble
+        import re as _re_pers
+        final_answer = _re_pers.sub(
+            r'\n*\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
+            '', final_answer, flags=_re_pers.IGNORECASE
+        ).strip()
         detected_dosha = self._detect_dosha_from_question(question, base_answer)
         personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha, original_question=original_question)
         print(f"🧬 Detected dosha: {detected_dosha}")

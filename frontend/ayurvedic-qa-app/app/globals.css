@@ -44,7 +44,8 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       circle at 20% 80%,
       rgba(52, 168, 83, 0.1) 0%,
       transparent 50%
@@ -64,7 +65,7 @@ body {
 }
 
 .container {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 20px;
   position: relative;
@@ -271,14 +272,18 @@ body {
 }
 
 .message-content {
-  max-width: 80%;
+  max-width: 85%;
   padding: 14px 18px;
   border-radius: 18px;
   line-height: 1.65;
 }
 
 .message-question .message-content {
-  background: linear-gradient(135deg, var(--forest-primary) 0%, var(--forest-medium) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--forest-primary) 0%,
+    var(--forest-medium) 100%
+  );
   color: white;
   border-bottom-right-radius: 4px;
   box-shadow: 0 2px 8px rgba(26, 77, 46, 0.2);
@@ -372,7 +377,7 @@ body {
 
 .input-wrapper {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -423,8 +428,42 @@ body {
   cursor: not-allowed;
 }
 
-.send-icon {
-  font-size: 20px;
+/* Voice button — styled identical to Ask button */
+.voice-btn {
+  padding: 13px 18px;
+  background: linear-gradient(
+    135deg,
+    #374151 0%,
+    #4b5563 100%
+  );
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.voice-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, #4b5563 0%, #6b7280 100%);
+}
+
+.voice-btn.listening {
+  background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);
+  animation: pulse-red 1s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 
 /* Scrollbar */

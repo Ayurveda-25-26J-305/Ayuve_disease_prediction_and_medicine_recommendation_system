@@ -692,11 +692,24 @@ export default function Home() {
                 justifyContent: "center",
                 transition: "background 0.15s",
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.25)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.15)")
+              }
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -813,8 +826,17 @@ export default function Home() {
                         justifyContent: "center",
                       }}
                     >
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
                     </button>
                   </div>
@@ -863,7 +885,16 @@ export default function Home() {
                 gap: "7px",
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="#fff"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
               Bookmarks
@@ -882,11 +913,24 @@ export default function Home() {
                 alignItems: "center",
                 justifyContent: "center",
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.25)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.15)")
+              }
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -1334,7 +1378,6 @@ export default function Home() {
           <form
             className="input-wrapper"
             onSubmit={handleSubmit}
-            style={{ position: "relative" }}
           >
             <input
               suppressHydrationWarning
@@ -1348,22 +1391,7 @@ export default function Home() {
               type="button"
               onClick={startVoice}
               title={isListening ? "Stop listening" : "Voice input"}
-              style={{
-                position: "absolute",
-                right: "110px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: isListening ? "#fee2e2" : "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "6px",
-                borderRadius: "6px",
-                color: isListening ? "#ef4444" : "#9ca3af",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.15s",
-              }}
+              className={`voice-btn${isListening ? " listening" : ""}`}
             >
               <svg
                 width="16"
@@ -1380,6 +1408,7 @@ export default function Home() {
                 <line x1="12" y1="19" x2="12" y2="23" />
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
+              {isListening ? "Stop" : "Voice"}
             </button>
             <button suppressHydrationWarning type="submit" disabled={loading}>
               <span className="send-icon">{loading ? "⏳" : "🌿"}</span>
@@ -1392,22 +1421,24 @@ export default function Home() {
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
-                marginTop: "6px",
+                marginTop: "5px",
                 color: "#ef4444",
-                fontSize: "0.82em",
+                fontSize: "0.78em",
                 fontWeight: "600",
+                paddingLeft: "4px",
               }}
             >
               <span
                 style={{
-                  width: "8px",
-                  height: "8px",
+                  width: "7px",
+                  height: "7px",
                   borderRadius: "50%",
                   background: "#ef4444",
                   display: "inline-block",
+                  animation: "pulse-red 1s ease-in-out infinite",
                 }}
               ></span>
-              Listening... speak now
+              Listening... speak your question now
             </div>
           )}
         </div>
@@ -1449,7 +1480,14 @@ function MessageComponent({
 
   const formatAnswer = (content: string, lang?: string): string[] => {
     if (!content || !content.trim()) return [];
-    if (lang === "si" || lang === "ta") return [content.trim()];
+    // For Sinhala/Tamil: split on bullet markers or newlines (don't return as single block)
+    if (lang === "si" || lang === "ta") {
+      const lines = content
+        .split(/\n|[•\-\*]\s+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 10);
+      return lines.length > 1 ? lines : [content.trim()];
+    }
     const lines = content
       .split("\n")
       .map((l) => l.replace(/^[•\-\*]\s*/, "").trim())
