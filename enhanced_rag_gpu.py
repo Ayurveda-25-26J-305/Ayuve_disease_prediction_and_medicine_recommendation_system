@@ -176,6 +176,10 @@ Related Question: {question}
             'it is worth', 'it should be noted', 'please note', 'note that',
             'based on', 'according to', 'the source', 'outlined by',
             'outlined above', 'referring to', 'as per', 'as noted',
+            # LLM hallucination / meta-commentary patterns
+            'these details', 'this might not', 'this does not', 'there appears',
+            'it does not', "it doesn't", 'not necessarily', 'if they don',
+            'the information about', 'there is no', 'there are no',
         ]
         clean = []
         for s in expanded:
@@ -197,8 +201,11 @@ Related Question: {question}
                 continue
             if re.search(r'\bpage\s*no\.?\b|\bline\s+number\b|\bpage\s+\d+\b', low):
                 continue
-            # Reject very long run-on sentences that are likely raw scripture dumps (>300 chars, no clear benefit)
-            if len(s) > 300 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?|relieves?)\b', low):
+            # Reject LLM meta-commentary: "extracted information", "pertaining", "constraints", etc.
+            if re.search(r'\b(pertaining|verbatim|constraints?|extracted\s+information|pertainingsource|directly\s+mentioned)\b', low):
+                continue
+            # Reject run-on sentences with no benefit verb (>250 chars)
+            if len(s) > 250 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?|relieves?|contains?|promotes?)\b', low):
                 continue
             # Ensure sentence ends with proper punctuation
             if not s[-1] in '.!?':
@@ -571,18 +578,16 @@ Related Question: {question}
 
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str, original_question: str = '') -> str:
         """
-        Generate 3 reliable dosha-specific Ayurvedic tips using templates.
+        Generate 3 dosha-specific Ayurvedic tips using question-type-aware templates.
         No LLM call — pure template system guarantees clean, relevant output.
         """
         import re as _re
         print(f"💡 Generating template tips for {dosha} dosha...")
 
-        # --- Extract a clean topic keyword from the question ---
-        # Use the original (pre-translation) question for topic extraction when available.
-        # Translated questions can be garbled (e.g. "kurudu wala guna" → "Are They Useful")
-        _source_q = question  # already translated to English at this point
+        # --- Step 1: Extract a clean topic keyword ---
+        _source_q = question
 
-        # Try to map romanized Sinhala herb names via the dictionary first
+        # Map romanized Sinhala herb names via the dictionary first
         try:
             from translation_service import SINHALA_TO_ENGLISH_DICT
             for sinhala_key, english_val in SINHALA_TO_ENGLISH_DICT.items():
@@ -592,80 +597,150 @@ Related Question: {question}
         except Exception:
             pass
 
+        _q = _source_q.lower()
+
+        # Remove the "(regarding: ...)" context suffix that buildQuestion appends
+        _q = _re.sub(r'\s*\(regarding:.*?\)', '', _q, flags=_re.IGNORECASE).strip()
+
+        # Detect question type BEFORE stripping topic (used for template selection)
+        _is_dosage   = bool(_re.search(r'\b(how much|how many|how often|how long|dosage|dose|quantity|amount)\b', _q))
+        _is_sideeff  = bool(_re.search(r'\b(side effect|harm|danger|safe|risk|caution|warning)\b', _q))
+        _is_howto    = bool(_re.search(r'\b(how to use|how to take|how to consume|how to prepare)\b', _q))
+
+        # Strip common question prefixes to isolate the herb/topic
         topic_raw = _re.sub(
             r'^(what are the (?:ayurvedic\s+)?(?:benefits|uses|properties|effects|qualities|guna)\s+of|'
             r'what are the benefits of|what are the uses of|what is the use of|'
             r'what are the|what are|what is the|what is|'
-            r'how does|how is|how can|benefits of|uses of|properties of|effects of|'
+            r'how does|how is|how can|how to|how much|how many|how often|how long|'
+            r'are there any|is there any|can i use|should i take|can i take|should i|'
             r'tell me about|tell me the|explain|describe|'
+            r'benefits of|uses of|properties of|effects of|'
             r'what dosha does|which dosha)\s+',
-            '', _source_q.lower(), flags=_re.IGNORECASE
+            '', _q, flags=_re.IGNORECASE
         ).strip().strip('?').strip()
 
-        # If result has "of <herb>" inside it, extract just the herb (e.g. "ayurvedic properties of ginger" → "ginger")
-        _of_match = _re.search(r'\bof\s+(.+)$', topic_raw)
+        # If result has "of <herb>" inside, extract just the herb
+        _of_match = _re.search(r'\bof\s+([a-zA-Z][a-zA-Z\s]{1,30}?)(?:\s+(?:daily|\?|\)|should|i|for|in|with|and|or|that|the).*)?$', topic_raw)
         if _of_match:
             topic_raw = _of_match.group(1).strip()
 
-        # Strip trailing verb phrases: "help digestion", "help with skin", "balance dosha", etc.
+        # Strip trailing verb / conjunction phrases
         topic_raw = _re.sub(
-            r'\s+(help\s*\w*|helps?|reduce\w*|balance\w*|support\w*|cure\w*|treat\w*|do|does|is|are|used|with|for).*$',
+            r'\s+(help\s*\w*|helps?|reduce\w*|balance\w*|support\w*|cure\w*|treat\w*|'
+            r'do|does|is|are|used|with|for|should|take|daily|morning|each|every|and|or).*$',
             '', topic_raw, flags=_re.IGNORECASE
         ).strip()
 
-        # Remove trailing filler words
+        # Remove trailing filler words and punctuation
         topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body|for|in|to|with|a|an|the)$', '', topic_raw, flags=_re.IGNORECASE).strip()
+        topic_raw = topic_raw.strip('?)(.,')
 
-        # Guard: if topic_raw is generic/bad (e.g. "are they useful", "it", "they"),
-        # fall back to the original question directly
-        _bad_topics = {'are', 'is', 'it', 'they', 'them', 'this', 'that', 'useful',
-                       'benefits', 'guna', 'monawada', 'what', 'how', 'does', 'do'}
+        # Guard: if topic_raw is empty/generic/still a question fragment, use fallback
+        _bad_topics = {
+            'are', 'is', 'it', 'they', 'them', 'this', 'that', 'useful',
+            'benefits', 'guna', 'monawada', 'what', 'how', 'does', 'do',
+            'much', 'many', 'often', 'any', 'there', 'can', 'should',
+            'side', 'effects', 'safe', 'dosage', 'dose', 'amount', 'long',
+        }
         topic_words = set(topic_raw.lower().split())
         if not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics):
-            # Last resort: first noun-like word from original question
-            _words = [w for w in _re.findall(r'\b[a-zA-Z]{4,}\b', original_question)
-                      if w.lower() not in _bad_topics | {'wala', 'what', 'guna', 'monawada'}]
+            # Last resort: first known-herb word from original question
+            _words = [w for w in _re.findall(r'\b[a-zA-Z]{4,}\b', original_question + ' ' + question)
+                      if w.lower() not in _bad_topics | {'wala', 'what', 'guna', 'monawada', 'regarding', 'causes', 'cause', 'vata', 'pitta', 'kapha', 'dosha', 'imbalance'}]
             topic_raw = _words[0] if _words else 'this herb'
 
-        # Capitalize nicely (handles multi-word topics)
-        topic = topic_raw.title() if topic_raw else question.strip('?').strip()
-        topic_low = topic_raw if topic_raw else question.lower().strip('?').strip()
+        topic = topic_raw.title()
 
-        # --- Dosha-specific tip templates ---
-        # Pure Subject + Verb + Object sentences only.
-        # No gerunds, no participials, no "to + infinitive" — avoids Google Translate Sinhala artefacts.
-        templates = {
-            'Vata': [
-                f"Warm ghee improves the potency of {topic} and supports Vata balance every day.",
-                f"{topic} stabilises Vata energy when consumed at the same time each morning.",
-                f"Black pepper increases the warmth of {topic} and supports healthy Vata digestion.",
-            ],
-            'Pitta': [
-                f"Coconut milk reduces the heating effect of {topic} and keeps Pitta dosha in balance.",
-                f"{topic} works best in early morning, before Pitta energy rises at noon.",
-                f"Fennel seeds cool the body when used together with {topic} for Pitta dosha.",
-            ],
-            'Kapha': [
-                f"Black pepper and warm water activate the digestive benefits of {topic} for Kapha dosha.",
-                f"{topic} reduces Kapha heaviness when consumed on an empty stomach each morning.",
-                f"Dry ginger increases the warming energy of {topic} and reduces Kapha sluggishness.",
-            ],
-            'General': [
-                f"{topic} supports Ayurvedic health and immunity when consumed daily with meals.",
-                f"A warm cup of {topic} tea each morning increases its absorption in the body.",
-                f"An Ayurvedic practitioner recommends the correct dose of {topic} for each body type.",
-            ],
+        # --- Step 2: Select templates based on dosha AND question type ---
+        dosha_tips = {
+            'Vata': {
+                'benefit': [
+                    f"{topic} reduces Vata dryness and supports joint and nerve health when taken with warm ghee.",
+                    f"Mixing {topic} with warm sesame oil or milk helps the body absorb it and calms Vata.",
+                    f"Regular use of {topic} in the morning with a glass of warm water balances Vata energy.",
+                ],
+                'dosage': [
+                    f"Take {topic} in small amounts — start with a pinch or quarter teaspoon and adjust slowly.",
+                    f"Consume {topic} with warm water or ghee in the morning for the best absorption in Vata types.",
+                    f"An Ayurvedic practitioner can set the exact daily dose of {topic} suited to your Vata constitution.",
+                ],
+                'sideeff': [
+                    f"{topic} is generally well tolerated for Vata types when taken in small, consistent amounts.",
+                    f"Avoid taking {topic} on an empty stomach if it causes gas or bloating, which Vata types can experience.",
+                    f"Combining {topic} with warm ghee or milk reduces any drying or irritating effects on the Vata system.",
+                ],
+            },
+            'Pitta': {
+                'benefit': [
+                    f"{topic} cools Pitta heat and helps reduce inflammation and acidity in the digestive system.",
+                    f"Taking {topic} with coconut milk or aloe vera juice enhances its cooling benefits for Pitta types.",
+                    f"Use {topic} in early morning, before Pitta energy peaks, to get the strongest calming effect.",
+                ],
+                'dosage': [
+                    f"Take {topic} in moderate amounts — excess heat can increase Pitta irritation with high doses.",
+                    f"A cool or room-temperature preparation of {topic} works better than hot preparations for Pitta types.",
+                    f"An Ayurvedic practitioner can recommend the balanced dose of {topic} for your Pitta constitution.",
+                ],
+                'sideeff': [
+                    f"{topic} is safe for Pitta when taken in moderate amounts and avoided during active inflammation.",
+                    f"If {topic} increases heat or causes acidity, reduce the dose and take it with cooling fennel water.",
+                    f"Avoid combining {topic} with spicy or sour foods, as this can amplify Pitta side effects.",
+                ],
+            },
+            'Kapha': {
+                'benefit': [
+                    f"{topic} reduces Kapha heaviness and stimulates metabolism and digestion when taken regularly.",
+                    f"Taking {topic} with black pepper and warm water activates its digestive benefits for Kapha types.",
+                    f"Dry-roasted {topic} with a pinch of ginger removes Kapha sluggishness from the digestive tract.",
+                ],
+                'dosage': [
+                    f"Kapha types can take a slightly higher dose of {topic} as their metabolism tolerates it well.",
+                    f"Take {topic} on an empty stomach each morning with warm water for the best Kapha-clearing effect.",
+                    f"An Ayurvedic practitioner can confirm the right daily quantity of {topic} for your Kapha body type.",
+                ],
+                'sideeff': [
+                    f"{topic} is well suited for Kapha types and side effects are rare when used in normal quantities.",
+                    f"If {topic} causes heaviness or congestion, combine it with dry ginger to counteract Kapha excess.",
+                    f"Avoid taking {topic} with cold or sweet foods, as this can increase Kapha and reduce its benefits.",
+                ],
+            },
+            'General': {
+                'benefit': [
+                    f"{topic} supports general Ayurvedic health and immunity when consumed daily with meals.",
+                    f"A warm preparation of {topic} each morning increases its bioavailability in the body.",
+                    f"An Ayurvedic practitioner can recommend the right form and dose of {topic} for your body type.",
+                ],
+                'dosage': [
+                    f"Start with a small daily amount of {topic} and observe how your body responds before increasing.",
+                    f"{topic} is best taken with warm water in the morning to maximise its daily benefits.",
+                    f"Consult an Ayurvedic practitioner for the correct dose of {topic} suited to your constitution.",
+                ],
+                'sideeff': [
+                    f"{topic} is generally safe when used in traditional Ayurvedic amounts and preparations.",
+                    f"If you experience discomfort after taking {topic}, reduce the amount and take it with food.",
+                    f"Consult an Ayurvedic practitioner before long-term daily use of {topic} for your body type.",
+                ],
+            },
         }
 
-        # Resolve compound doshas (e.g. "Vata-Pitta" → use Vata templates)
-        key = 'General'
+        # Resolve compound doshas (e.g. "Vata-Pitta" → Vata)
+        dosha_key = 'General'
         for d in ['Vata', 'Pitta', 'Kapha']:
             if d in dosha:
-                key = d
+                dosha_key = d
                 break
 
-        tips = templates[key]
-        print(f"✓ Template tips generated for {key} dosha — topic: '{topic}'")
+        # Select template variant based on question type
+        if _is_sideeff:
+            q_type = 'sideeff'
+        elif _is_dosage or _is_howto:
+            q_type = 'dosage'
+        else:
+            q_type = 'benefit'
+
+        tips = dosha_tips[dosha_key][q_type]
+        print(f"✓ Tips generated for {dosha_key}/{q_type} — topic: '{topic}'")
         return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
     def answer_question(
