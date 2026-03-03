@@ -1025,7 +1025,14 @@ export default function Home() {
         }}
       >
         <header className="header">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              flex: 1,
+            }}
+          >
             <button
               onClick={() => setShowSidebar(!showSidebar)}
               title="Chat history"
@@ -1067,7 +1074,15 @@ export default function Home() {
           </div>
 
           {/* Right slot — action buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, justifyContent: "flex-end" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flex: 1,
+              justifyContent: "flex-end",
+            }}
+          >
             {messages.length > 0 && (
               <button
                 onClick={exportPDF}
