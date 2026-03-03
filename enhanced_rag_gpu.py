@@ -926,7 +926,112 @@ Related Question: {question}
         
         # Token budget — 150 tokens is enough for 2-3 clear sentences (Feb 23 approach)
         dynamic_tokens = 150
-            
+
+        # ── CONCEPT KNOWLEDGE BASE ──────────────────────────────────────────────
+        # For fundamental Ayurvedic concepts the vector DB may not have a direct
+        # definition chunk, so we inject a curated paragraph as context.
+        # The LLM uses ONLY this text as its source — no hallucination from irrelevant chunks.
+        CONCEPT_KB = {
+            'pitta': (
+                "Pitta is one of the three doshas (body energies) in Ayurveda. "
+                "It is made of fire and water elements. Pitta controls digestion, metabolism, "
+                "body temperature, hunger, thirst, and intelligence. "
+                "When Pitta is balanced, a person has good digestion, sharp thinking, and a warm personality. "
+                "When Pitta is too high, it causes acidity, skin rashes, anger, inflammation, and burning sensations. "
+                "Pitta is balanced by eating cooling foods like cucumber, coconut, and fresh greens, "
+                "and by avoiding spicy, fried, and sour foods."
+            ),
+            'vata': (
+                "Vata is one of the three doshas in Ayurveda. "
+                "It is made of air and space elements. Vata controls all movement in the body — "
+                "breathing, blood circulation, nerve signals, and digestion. "
+                "When Vata is balanced, a person feels energetic, creative, and mentally clear. "
+                "When Vata is too high, it causes dry skin, constipation, anxiety, joint pain, and irregular digestion. "
+                "Vata is balanced by eating warm, cooked, oily foods like soups and rice with ghee, "
+                "and by keeping a regular daily routine."
+            ),
+            'kapha': (
+                "Kapha is one of the three doshas in Ayurveda. "
+                "It is made of earth and water elements. Kapha gives the body structure, strength, and stability. "
+                "It controls body weight, immune strength, joint lubrication, and calm emotions. "
+                "When Kapha is balanced, a person is strong, calm, and steady. "
+                "When Kapha is too high, it causes weight gain, laziness, congestion, slow digestion, and depression. "
+                "Kapha is balanced by eating light, warm, spicy foods, exercising regularly, and waking up early."
+            ),
+            'dosha': (
+                "In Ayurveda, a dosha is one of three fundamental body energies — Vata, Pitta, and Kapha. "
+                "Every person has all three doshas, but one or two are usually dominant and form their Prakriti (body type). "
+                "Vata (air+space) controls movement. Pitta (fire+water) controls digestion and metabolism. "
+                "Kapha (earth+water) gives structure and strength. "
+                "Good health in Ayurveda means keeping your doshas in their natural balance through diet, lifestyle, and herbs."
+            ),
+            'tridosha': (
+                "Tridosha means the three doshas together — Vata, Pitta, and Kapha. "
+                "These three energies control every function in the human body and mind. "
+                "Vata controls movement and breathing. Pitta controls digestion and body heat. "
+                "Kapha gives strength and stability. "
+                "Ayurvedic treatment works by finding which dosha is out of balance and correcting it with the right food, "
+                "herbs, and daily habits."
+            ),
+            'prakriti': (
+                "Prakriti is your natural body type in Ayurveda, determined at birth by the balance of Vata, Pitta, and Kapha. "
+                "There are seven Prakriti types: Vata, Pitta, Kapha, Vata-Pitta, Pitta-Kapha, Vata-Kapha, and Tridoshic. "
+                "Knowing your Prakriti helps you choose the right diet, lifestyle, and herbs to stay healthy. "
+                "Your Prakriti does not change throughout life, but the doshas can go out of balance due to diet, stress, or season."
+            ),
+            'agni': (
+                "Agni means digestive fire in Ayurveda. "
+                "It is the body's power to digest food, absorb nutrients, and remove waste. "
+                "Strong Agni means good digestion, energy, and clear thinking. "
+                "Weak Agni causes bloating, tiredness, and toxin buildup (Ama) in the body. "
+                "Agni is kept strong by eating at regular times, avoiding cold or heavy foods, "
+                "and using digestive herbs like ginger, cumin, and fennel."
+            ),
+            'ojas': (
+                "Ojas is the vital life essence in Ayurveda. "
+                "It is the purest result of good digestion and nourishment. "
+                "Strong Ojas gives immunity, energy, a calm mind, and a glowing appearance. "
+                "Ojas is reduced by stress, poor sleep, overwork, and unhealthy food. "
+                "It is built up by eating fresh natural foods, getting enough sleep, practising meditation, "
+                "and using herbs like Ashwagandha and Shatavari."
+            ),
+            'ama': (
+                "Ama means undigested toxins in Ayurveda. "
+                "It forms in the body when Agni (digestive fire) is weak and food is not fully processed. "
+                "Ama looks like a white coating on the tongue and causes heaviness, tiredness, and blocked channels. "
+                "Most diseases in Ayurveda start from Ama buildup. "
+                "It is removed by improving digestion, eating light foods, fasting occasionally, "
+                "and using detoxifying herbs like Triphala and dry ginger."
+            ),
+            'dhatu': (
+                "Dhatu means body tissue in Ayurveda. "
+                "There are seven Dhatus: Rasa (plasma), Rakta (blood), Mamsa (muscle), Meda (fat), "
+                "Asthi (bone), Majja (marrow/nerve), and Shukra (reproductive tissue). "
+                "Each Dhatu is nourished in order from food — first Rasa, then Rakta, and so on. "
+                "Healthy Dhatus depend on strong Agni and a balanced diet. "
+                "Weak Dhatus cause various diseases depending on which tissue is affected."
+            ),
+            'ayurveda': (
+                "Ayurveda is a traditional system of medicine from India that is over 5000 years old. "
+                "The word means 'knowledge of life' in Sanskrit. "
+                "Ayurveda teaches that health comes from balance between the body, mind, and spirit. "
+                "It uses diet, herbs, yoga, massage, and daily routines to prevent and treat disease. "
+                "The three doshas — Vata, Pitta, and Kapha — are the foundation of Ayurvedic health theory. "
+                "Ayurveda is still widely used in Sri Lanka, India, and around the world."
+            ),
+        }
+
+        # Detect if question is about a known Ayurvedic concept
+        import re as _re_kb
+        _q_lower = question.lower()
+        _injected_context = None
+        for _concept_key, _concept_text in CONCEPT_KB.items():
+            if _re_kb.search(r'\b' + _concept_key + r'\b', _q_lower):
+                _injected_context = _concept_text
+                print(f"📖 Concept question detected: '{_concept_key}' — using curated KB context")
+                break
+        # ── END CONCEPT KNOWLEDGE BASE ───────────────────────────────────────────
+
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
         
@@ -935,7 +1040,8 @@ Related Question: {question}
         # Build messages — simple single-user-message prompt (Feb 23 proven approach).
         # Asking for 2-3 sentences produces clean prose; bullet-forcing caused
         # the model to emit meta-commentary and book-index garbage.
-        context_summary = context_text[:600]  # ~150 tokens of context
+        # If a curated KB context exists for this concept, use it instead of retrieved docs.
+        context_summary = _injected_context if _injected_context else context_text[:600]
         messages = [
             {
                 "role": "user",
