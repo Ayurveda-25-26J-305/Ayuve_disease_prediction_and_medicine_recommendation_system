@@ -940,9 +940,14 @@ Related Question: {question}
             r'\n*\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
             '', final_answer, flags=_re_pers.IGNORECASE
         ).strip()
-        detected_dosha = self._detect_dosha_from_question(question, base_answer)
+        # Use saved Prakriti profile dosha if available; otherwise detect from question
+        if user_profile and user_profile.get('dominant_dosha') and user_profile['dominant_dosha'] not in ('N/A', '', None):
+            detected_dosha = user_profile['dominant_dosha'].capitalize()
+            print(f"🧬 Using profile dosha: {detected_dosha}")
+        else:
+            detected_dosha = self._detect_dosha_from_question(question, base_answer)
+            print(f"🧬 Detected dosha from question: {detected_dosha}")
         personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha, original_question=original_question)
-        print(f"🧬 Detected dosha: {detected_dosha}")
         
         # Format response with similarity percentages
         formatted_citations = []
