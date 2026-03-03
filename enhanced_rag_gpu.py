@@ -190,6 +190,16 @@ Related Question: {question}
             'but remember', 'but note', 'folks don', 'as per source',
             'this way of', 'this herbal', 'maximally drink', 'follow this pattern',
             'secondary part', 'no longer', 'first thing in morning',
+            # LLM apology / inability patterns
+            "i'm sorry", "i am sorry", 'i apologize', 'unfortunately',
+            'i cannot', 'i could not', 'i am unable', 'i\'m unable',
+            'sorry, but', 'sorry but', 'regrettably', 'no information',
+            'no specific', 'not able to', 'unable to find', 'not found',
+            'cannot find', 'could not find', 'does not appear',
+            'it appears no one', 'it appears that no',
+            # Garbled LLM filler
+            'however, based', 'however, as mentioned', 'however, the',
+            'as mentioned, the', 'as mentioned above',
         ]
         # Also reject sentences containing strongly informal/hallucinated markers mid-sentence
         INFORMAL_REJECT = re.compile(
@@ -236,7 +246,7 @@ Related Question: {question}
             clean.append(s)
 
         if not clean:
-            # Fallback: split raw into sentences, apply same scripture filters, take first 3
+            # Fallback: split raw into sentences — apply THE SAME filters as main path
             fallback_sentences = re.split(r'(?<=[.!?])\s+', raw.strip())
             # If one long paragraph with no sentence breaks, try comma+capital split
             if len(fallback_sentences) == 1 and len(fallback_sentences[0]) > 200:
@@ -247,6 +257,12 @@ Related Question: {question}
                 if len(s) < 15:
                     continue
                 low_s = s.lower()
+                # Apply the same FILLER_STARTS check as the main path
+                if any(low_s.startswith(f) for f in FILLER_STARTS):
+                    continue
+                # Apply the same INFORMAL_REJECT regex
+                if INFORMAL_REJECT.search(s):
+                    continue
                 if re.search(r'\b(chapter|verse|bibliography|ibid)\b', low_s):
                     continue
                 if re.search(r'\bpage\s*no\.?\b|\bline\s+number\b|\bpage\s+\d+\b', low_s):
@@ -254,14 +270,15 @@ Related Question: {question}
                 if re.search(r'\b(source|citation|reference)\b', low_s) and \
                    re.search(r'\b(states?|says?|mentions?|notes?|reports?|indicates?|describes?)\b', low_s):
                     continue
-                if len(s) > 300 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?)\b', low_s):
+                if len(s) > 250 and not re.search(r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?)\b', low_s):
                     continue
                 if s[-1] not in '.!?':
                     s = s + '.'
                 fallback_clean.append(s[0].upper() + s[1:])
             if fallback_clean:
                 return '\n'.join(f'\u2022 {b}' for b in fallback_clean[:3])
-            return raw.strip()
+            # Nothing survived — return a generic fallback rather than raw garbage
+            return ''
 
         # 9. Return up to 3 bullets
         bullets = clean[:3]
@@ -457,7 +474,7 @@ Related Question: {question}
             for word in words:
                 # Check if word has Sinhala characters
                 has_sinhala = bool(re.search(r'[\u0D80-\u0DFF]', word))
-                
+
                 if has_sinhala:
                     # Check for gibberish patterns (isolated vowel signs, excessive marks)
                     # Filter out words with unusual patterns like excessive ් (al-lakuna)
@@ -465,8 +482,14 @@ Related Question: {question}
                     if not re.search(gibberish_pattern, word):
                         cleaned_words.append(word)
                 else:
-                    # Keep non-Sinhala words (numbers, punctuation)
-                    cleaned_words.append(word)
+                    # Reject English words mixed into Sinhala sentences
+                    # e.g. 'curcumin(kur)', 'Guggilam', 'Ashwagandha' leaking in
+                    # Allow: numbers, single letters, common punctuation, known loan words
+                    if re.match(r'^[\d.,!?%;:()\-\/\\]+$', word):
+                        cleaned_words.append(word)  # keep numbers/punctuation
+                    elif len(word) <= 2:
+                        cleaned_words.append(word)  # keep short tokens like "–"
+                    # else: drop English words embedded in Sinhala lines
             
             if not cleaned_words:
                 continue
@@ -500,8 +523,17 @@ Related Question: {question}
         # Ensure we have at least some content
         if not cleaned_lines:
             return translated_text  # Return original if cleanup removed everything
-        
-        return '\n'.join(cleaned_lines)
+
+        result = '\n'.join(cleaned_lines)
+
+        # Final guard: if more than 40% of characters are ASCII (English), the translation
+        # failed badly — return empty so the caller falls back to English
+        ascii_chars = sum(1 for c in result if ord(c) < 128 and c.isalpha())
+        total_chars = sum(1 for c in result if c.isalpha())
+        if total_chars > 0 and ascii_chars / total_chars > 0.4:
+            return ''
+
+        return result
     
     def _add_term_clarification(self, answer: str, original_question: str, is_romanized: bool) -> str:
         """
@@ -1083,6 +1115,7 @@ Related Question: {question}
                 print("⚠️  WARNING: Generated answer is empty or too short!")
                 print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
                 print(f"   Messages used: {str(messages)[:300]}...")
+                base_answer = "No specific information was found for this question in the Ayurvedic sources."
         
         # Validate
         validation_result = None
@@ -1178,11 +1211,10 @@ Related Question: {question}
             if cleaned_translation and len(cleaned_translation.strip()) >= 20:
                 display_answer = cleaned_translation.strip()
                 print(f"\u2713 Translation complete: {display_answer[:100]}...")
-            elif raw_translation and raw_translation.strip():
-                display_answer = raw_translation.strip()
-                print(f"\u26a0\ufe0f  Cleanup over-filtered, using raw translation")
             else:
-                print("⚠️  Translation returned empty, using English")
+                # cleaned_translation is empty — either cleanup over-filtered or ASCII guard fired.
+                # Do NOT fall back to raw_translation (may still contain garbled English).
+                print("⚠️  Translation filtered/empty, using English fallback")
                 display_answer = final_answer
 
         elif self.enable_translation and self.translator and detected_language == 'ta':
