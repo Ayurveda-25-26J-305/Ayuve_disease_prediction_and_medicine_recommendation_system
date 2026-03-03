@@ -1037,53 +1037,52 @@ Related Question: {question}
         
         print(f"🔍 Context preview (first 300 chars): {context_text[:300]}...")
         
-        # Build messages — simple single-user-message prompt (Feb 23 proven approach).
-        # Asking for 2-3 sentences produces clean prose; bullet-forcing caused
-        # the model to emit meta-commentary and book-index garbage.
-        # If a curated KB context exists for this concept, use it instead of retrieved docs.
-        context_summary = _injected_context if _injected_context else context_text[:600]
-        messages = [
-            {
-                "role": "user",
-                "content": (
-                    f"You are an Ayurvedic health assistant. "
-                    f"Using ONLY the sources below, write 2-3 short sentences that directly answer the question. "
-                    f"Use simple everyday English that anyone can understand — do NOT use heavy Ayurvedic, medical, or scientific terms. "
-                    f"Start each sentence with a subject (herb name, dosha name, or food) followed by what it does. "
-                    f"Example: 'Turmeric reduces swelling in the body.' or 'Vata dosha controls movement and breathing.' "
-                    f"Do NOT say 'According to', do NOT mention book titles or sources.\n\n"
-                    f"Sources:\n{context_summary}\n\n"
-                    f"Question: {question}"
-                )
-            }
-        ]
-        print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
-
-        # Generate answer
-        print("💭 Generating answer...")
-        raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
-
-        # Use raw answer directly — complex extractors were rejecting all valid
-        # content and producing meta-commentary as output (Feb 23 proven approach)
-        raw_answer = raw_answer.strip()
-
-        # Restructure: strip attribution/source noise, extract 2 clean bullet facts
-        # First, strip any "**Personalized for X Constitution:**" block the LLM may have added
+        # ── FAST PATH: concept questions bypass the LLM entirely ───────────────
+        # The small LLM hallucinates even when given correct source text.
+        # For Pitta/Vata/Kapha/etc. we just format the curated KB sentences as
+        # bullet points directly — same pattern as personalised tips generation.
         import re as _re_raw
-        raw_answer = _re_raw.sub(
-            r'\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
-            '', raw_answer, flags=_re_raw.IGNORECASE
-        ).strip()
-        base_answer = self._restructure_answer(raw_answer, question=question)
-
-        print(f"✅ Generation complete!")
-        print(f"   Answer length: {len(base_answer)} chars")
-        print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
-        
-        if not base_answer or len(base_answer.strip()) < 10:
-            print("⚠️  WARNING: Generated answer is empty or too short!")
-            print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
-            print(f"   Messages used: {str(messages)[:300]}...")
+        if _injected_context:
+            _kb_sentences = [s.strip() for s in _re_raw.split(r'(?<=[.!?])\s+', _injected_context.strip()) if len(s.strip()) > 20]
+            # Take first 3 sentences max
+            _kb_bullets = _kb_sentences[:3]
+            base_answer = '\n'.join(f'\u2022 {s}' for s in _kb_bullets)
+            print(f"⚡ KB fast-path answer (no LLM): {base_answer[:120]}...")
+        else:
+            # ── NORMAL PATH: LLM generates from retrieved docs ───────────────────
+            context_summary = context_text[:600]  # ~150 tokens of context
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        f"You are an Ayurvedic health assistant. "
+                        f"Using ONLY the sources below, write 2-3 short sentences that directly answer the question. "
+                        f"Use simple everyday English that anyone can understand — do NOT use heavy Ayurvedic, medical, or scientific terms. "
+                        f"Start each sentence with a subject (herb name, dosha name, or food) followed by what it does. "
+                        f"Example: 'Turmeric reduces swelling in the body.' or 'Vata dosha controls movement and breathing.' "
+                        f"Do NOT say 'According to', do NOT mention book titles or sources.\n\n"
+                        f"Sources:\n{context_summary}\n\n"
+                        f"Question: {question}"
+                    )
+                }
+            ]
+            print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
+            print("💭 Generating answer...")
+            raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
+            raw_answer = raw_answer.strip()
+            # Strip any "**Personalized for X Constitution:**" block the LLM may have added
+            raw_answer = _re_raw.sub(
+                r'\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
+                '', raw_answer, flags=_re_raw.IGNORECASE
+            ).strip()
+            base_answer = self._restructure_answer(raw_answer, question=question)
+            print(f"✅ Generation complete!")
+            print(f"   Answer length: {len(base_answer)} chars")
+            print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
+            if not base_answer or len(base_answer.strip()) < 10:
+                print("⚠️  WARNING: Generated answer is empty or too short!")
+                print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
+                print(f"   Messages used: {str(messages)[:300]}...")
         
         # Validate
         validation_result = None
