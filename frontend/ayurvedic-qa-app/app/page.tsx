@@ -649,27 +649,30 @@ export default function Home() {
             bottom: 0,
             width: "300px",
             background: "#fff",
-            borderRight: "1px solid #e5e7eb",
+            borderRight: "1px solid #d1fae5",
             zIndex: 100,
             display: "flex",
             flexDirection: "column",
-            boxShadow: "4px 0 16px rgba(0,0,0,0.1)",
+            boxShadow: "4px 0 20px rgba(26,77,46,0.12)",
           }}
         >
           <div
             style={{
-              padding: "16px",
-              borderBottom: "1px solid #e5e7eb",
+              padding: "14px 16px",
+              borderBottom: "1px solid #e8f5e9",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              background: "linear-gradient(135deg, #1a4d2e 0%, #2d6a4f 100%)",
+              borderRadius: "0",
             }}
           >
             <span
               style={{
                 fontWeight: "700",
-                color: "#059669",
-                fontSize: "1.05em",
+                color: "#fff",
+                fontSize: "0.95em",
+                letterSpacing: "0.2px",
               }}
             >
               Chat History
@@ -677,18 +680,28 @@ export default function Home() {
             <button
               onClick={() => setShowSidebar(false)}
               style={{
-                background: "none",
+                background: "rgba(255,255,255,0.15)",
                 border: "none",
                 cursor: "pointer",
-                fontSize: "1.2em",
-                color: "#6b7280",
+                color: "#fff",
+                width: "26px",
+                height: "26px",
+                borderRadius: "6px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.15s",
               }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
             >
-              x
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           </div>
           <div
-            style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6" }}
+            style={{ padding: "10px 12px", borderBottom: "1px solid #e8f5e9" }}
           >
             <input
               type="text"
@@ -699,34 +712,36 @@ export default function Home() {
                 width: "100%",
                 padding: "7px 10px",
                 borderRadius: "8px",
-                border: "1px solid #d1d5db",
+                border: "1.5px solid #c6f0d8",
                 fontSize: "0.85em",
                 outline: "none",
                 boxSizing: "border-box",
+                background: "#f9fffe",
               }}
             />
           </div>
           <div
-            style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6" }}
+            style={{ padding: "10px 12px", borderBottom: "1px solid #e8f5e9" }}
           >
             <button
               onClick={newSession}
               style={{
                 width: "100%",
                 padding: "8px",
-                background: "#059669",
+                background: "linear-gradient(135deg, #2d6a4f 0%, #40916c 100%)",
                 color: "#fff",
                 border: "none",
                 borderRadius: "8px",
                 fontWeight: "600",
                 cursor: "pointer",
-                fontSize: "0.9em",
+                fontSize: "0.88em",
+                letterSpacing: "0.2px",
               }}
             >
               + New Chat
             </button>
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
             {filteredSessions.length === 0 ? (
               <p
                 style={{
@@ -743,16 +758,17 @@ export default function Home() {
                 <div
                   key={s.id}
                   style={{
-                    padding: "10px 12px",
+                    padding: "9px 12px",
                     borderRadius: "8px",
                     marginBottom: "4px",
                     background:
-                      s.id === currentSessionId ? "#f0fdf4" : "#f9fafb",
+                      s.id === currentSessionId ? "#f0fdf4" : "#fafffe",
                     border:
                       s.id === currentSessionId
                         ? "1px solid #6ee7b7"
-                        : "1px solid transparent",
+                        : "1px solid #e8f5e9",
                     cursor: "pointer",
+                    transition: "all 0.15s",
                   }}
                   onClick={() => loadSession(s)}
                 >
@@ -787,14 +803,19 @@ export default function Home() {
                       }}
                       style={{
                         background: "none",
-                        border: "none",
+                        border: "1px solid #fca5a5",
+                        borderRadius: "5px",
                         color: "#ef4444",
                         cursor: "pointer",
-                        fontSize: "0.8em",
-                        padding: "2px 4px",
+                        padding: "2px 5px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      x
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -814,42 +835,59 @@ export default function Home() {
             bottom: 0,
             width: "320px",
             background: "#fff",
-            borderLeft: "1px solid #e5e7eb",
+            borderLeft: "1px solid #e9d5ff",
             zIndex: 100,
             display: "flex",
             flexDirection: "column",
-            boxShadow: "-4px 0 16px rgba(0,0,0,0.1)",
+            boxShadow: "-4px 0 20px rgba(124,58,237,0.1)",
           }}
         >
           <div
             style={{
-              padding: "16px",
-              borderBottom: "1px solid #e5e7eb",
+              padding: "14px 16px",
+              borderBottom: "1px solid #ede9fe",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              background: "linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)",
             }}
           >
             <span
               style={{
                 fontWeight: "700",
-                color: "#7c3aed",
-                fontSize: "1.05em",
+                color: "#fff",
+                fontSize: "0.95em",
+                letterSpacing: "0.2px",
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
               }}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
               Bookmarks
             </span>
             <button
               onClick={() => setShowBookmarks(false)}
               style={{
-                background: "none",
+                background: "rgba(255,255,255,0.15)",
                 border: "none",
                 cursor: "pointer",
-                fontSize: "1.2em",
-                color: "#6b7280",
+                color: "#fff",
+                width: "26px",
+                height: "26px",
+                borderRadius: "6px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
             >
-              x
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
@@ -933,8 +971,8 @@ export default function Home() {
         className="container"
         style={{
           flex: 1,
-          marginLeft: showSidebar ? "300px" : 0,
-          marginRight: showBookmarks ? "320px" : 0,
+          marginLeft: showSidebar ? "300px" : "auto",
+          marginRight: showBookmarks ? "320px" : "auto",
           transition: "margin 0.2s ease",
         }}
       >
