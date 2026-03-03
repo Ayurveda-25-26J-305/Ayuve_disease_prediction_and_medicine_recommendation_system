@@ -827,16 +827,20 @@ export default function Home() {
                       }}
                     >
                       <svg
-                        width="10"
-                        height="10"
+                        width="12"
+                        height="12"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="2.5"
+                        strokeWidth="2"
                         strokeLinecap="round"
+                        strokeLinejoin="round"
                       >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                       </svg>
                     </button>
                   </div>
@@ -857,21 +861,21 @@ export default function Home() {
             bottom: 0,
             width: "320px",
             background: "#fff",
-            borderLeft: "1px solid #e9d5ff",
+            borderLeft: "1px solid #6ee7b7",
             zIndex: 100,
             display: "flex",
             flexDirection: "column",
-            boxShadow: "-4px 0 20px rgba(124,58,237,0.1)",
+            boxShadow: "-4px 0 20px rgba(5,150,105,0.15)",
           }}
         >
           <div
             style={{
               padding: "14px 16px",
-              borderBottom: "1px solid #ede9fe",
+              borderBottom: "1px solid #6ee7b7",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              background: "linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)",
+              background: "linear-gradient(135deg, #065f46 0%, #059669 100%)",
             }}
           >
             <span
@@ -1021,7 +1025,7 @@ export default function Home() {
         }}
       >
         <header className="header">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
             <button
               onClick={() => setShowSidebar(!showSidebar)}
               title="Chat history"
@@ -1031,7 +1035,7 @@ export default function Home() {
                 borderRadius: "8px",
                 padding: "6px 10px",
                 cursor: "pointer",
-                color: "#059669",
+                color: "#ffffff",
                 fontSize: "1.1em",
               }}
             >
@@ -1055,7 +1059,15 @@ export default function Home() {
               <h1>Ayurvedic Knowledge Assistant</h1>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Centre slot — "Ancient Wisdom, Modern Insights" */}
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <div className="subtitle" style={{ margin: 0 }}>
+              Ancient Wisdom, Modern Insights
+            </div>
+          </div>
+
+          {/* Right slot — action buttons */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, justifyContent: "flex-end" }}>
             {messages.length > 0 && (
               <button
                 onClick={exportPDF}
@@ -1066,7 +1078,7 @@ export default function Home() {
                   borderRadius: "8px",
                   padding: "5px 10px",
                   cursor: "pointer",
-                  color: "#059669",
+                  color: "#ffffff",
                   fontSize: "0.82em",
                   fontWeight: "600",
                   display: "flex",
@@ -1095,12 +1107,12 @@ export default function Home() {
               onClick={() => setShowBookmarks(!showBookmarks)}
               title="Bookmarks"
               style={{
-                background: showBookmarks ? "#ede9fe" : "none",
-                border: "1px solid #e9d5ff",
+                background: showBookmarks ? "#065f46" : "none",
+                border: "1px solid #d1fae5",
                 borderRadius: "8px",
                 padding: "5px 10px",
                 cursor: "pointer",
-                color: "#7c3aed",
+                color: "#ffffff",
                 fontSize: "0.82em",
                 fontWeight: "600",
                 display: "flex",
@@ -1124,9 +1136,6 @@ export default function Home() {
                 ? `${bookmarkedMessages.length} saved`
                 : "Bookmarks"}
             </button>
-            <div className="subtitle" style={{ margin: 0 }}>
-              Ancient Wisdom, Modern Insights
-            </div>
           </div>
         </header>
 
@@ -1375,10 +1384,7 @@ export default function Home() {
         </div>
 
         <div className="input-area">
-          <form
-            className="input-wrapper"
-            onSubmit={handleSubmit}
-          >
+          <form className="input-wrapper" onSubmit={handleSubmit}>
             <input
               suppressHydrationWarning
               type="text"

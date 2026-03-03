@@ -431,11 +431,7 @@ body {
 /* Voice button — styled identical to Ask button */
 .voice-btn {
   padding: 13px 18px;
-  background: linear-gradient(
-    135deg,
-    #374151 0%,
-    #4b5563 100%
-  );
+  background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
   color: white;
   border: none;
   border-radius: 12px;
@@ -462,8 +458,13 @@ body {
 }
 
 @keyframes pulse-red {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
 }
 
 /* Scrollbar */
