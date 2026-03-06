@@ -642,6 +642,7 @@ export default function Home() {
       {/* Sidebar */}
       {showSidebar && (
         <div
+          className="side-panel side-panel--left"
           style={{
             position: "fixed",
             left: 0,
@@ -854,6 +855,7 @@ export default function Home() {
       {/* Bookmarks Panel */}
       {showBookmarks && (
         <div
+          className="side-panel side-panel--right"
           style={{
             position: "fixed",
             right: 0,
@@ -1019,8 +1021,8 @@ export default function Home() {
         className="container"
         style={{
           flex: 1,
-          marginLeft: showSidebar ? "300px" : "auto",
-          marginRight: showBookmarks ? "320px" : "auto",
+          marginLeft: showSidebar ? "clamp(0px, 300px, 30vw)" : "auto",
+          marginRight: showBookmarks ? "clamp(0px, 320px, 30vw)" : "auto",
           transition: "margin 0.2s ease",
         }}
       >
@@ -1156,12 +1158,14 @@ export default function Home() {
 
         <div className="stats-bar">
           <div className="stat-item">
-            <span className="stat-icon">📚</span>
+            {/* YOUR DOCUMENTS ICON HERE */}
+            <span className="stat-icon"></span>
             <span className="stat-value">{stats.docCount}</span>
             <span className="stat-label">Documents</span>
           </div>
           <div className="stat-item">
-            <span className="stat-icon">⚡</span>
+            {/* YOUR MODEL ICON HERE */}
+            <span className="stat-icon"></span>
             <span className="stat-value">{stats.modelName}</span>
             <span className="stat-label">Model</span>
           </div>
@@ -1170,7 +1174,8 @@ export default function Home() {
             style={{ cursor: "pointer" }}
             onClick={() => setShowPrakritiQuiz(!showPrakritiQuiz)}
           >
-            <span className="stat-icon">{userProfile ? "🧬" : "👤"}</span>
+            {/* YOUR DOSHA ICON HERE */}
+            <span className="stat-icon"></span>
             <span className="stat-value" style={{ fontSize: "0.95em" }}>
               {userProfile
                 ? userProfile.dominant_dosha.charAt(0).toUpperCase() +
