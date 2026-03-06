@@ -10,8 +10,10 @@ from flask_cors import CORS
 import sys
 import os
 
-# Add parent directory to path to import our modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add parent directory and scripts/ to path to import our modules
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(_root)
+sys.path.append(os.path.join(_root, 'scripts'))
 
 from vector_db_setup import FAISSVectorDB
 from enhanced_rag_gpu import EnhancedAyurvedicRAG  # Use GPU version with new features
