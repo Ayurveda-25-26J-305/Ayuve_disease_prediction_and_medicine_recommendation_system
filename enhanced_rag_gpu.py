@@ -1141,96 +1141,84 @@ Related Question: {question}
             base_answer = '\n'.join(f'\u2022 {s}' for s in _kb_bullets)
             print(f"⚡ KB fast-path answer (no LLM): {base_answer[:120]}...")
         else:
-            # ── NORMAL PATH: LLM generates from retrieved docs ───────────────────
-            context_summary = context_text[:600]  # ~150 tokens of context
-            # Extract just the herb/topic name from the question for focused prompting
-            import re as _re_prompt
-            _herb_match = _re_prompt.search(
-                r'\b(turmeric|cinnamon|ginger|neem|ashwagandha|triphala|tulsi|aloe vera|'
+            # ── CONTEXT EXTRACTION PATH (no LLM) ─────────────────────────────────
+            # Same deterministic approach as _generate_personalized_tips:
+            # score every sentence from the retrieved context by word-overlap with
+            # the question and return the top 2-3 as bullet points.
+            # No LLM → no hallucination, no off-topic answers, always stable.
+            import re as _re_ctx
+
+            # 1. Detect canonical herb name (handles common misspellings)
+            _HERB_ALIASES = {'tumeric': 'Turmeric'}
+            _herb_match = _re_ctx.search(
+                r'\b(turmeric|tumeric|cinnamon|ginger|neem|ashwagandha|triphala|tulsi|aloe vera|'
                 r'brahmi|shatavari|cardamom|cumin|fenugreek|amla|nelli|kohomba|kurudu|'
                 r'inguru|kaha|welpenela|gotukola|licorice|pepper|clove|nutmeg|garlic|'
                 r'curry leaf|moringa|sesame|coconut|ghee)\b',
                 question.lower()
             )
-            _herb_in_q = _herb_match.group(0).title() if _herb_match else ''
-            _subject_hint = f" About: {_herb_in_q}." if _herb_in_q else ''
-            messages = [
-                {
-                    "role": "user",
-                    "content": (
-                        f"You are an Ayurvedic health assistant.{_subject_hint}\n"
-                        f"Using ONLY the sources below, write exactly 2 bullet points that directly answer the question.\n"
-                        f"Each bullet must:\n"
-                        f"- Start with '- '\n"
-                        f"- Begin with the subject name (herb, food, or practice)\n"
-                        f"- Be one short sentence (max 20 words)\n"
-                        f"- Use simple everyday English\n"
-                        f"- State what it DOES or what it HELPS with\n"
-                        f"Example format:\n"
-                        f"- Turmeric reduces inflammation and joint pain in the body.\n"
-                        f"- Turmeric supports liver health and improves digestion.\n"
-                        f"Do NOT mention book titles, sources, chapters, or use 'According to'.\n\n"
-                        f"Sources:\n{context_summary}\n\n"
-                        f"Question: {question}"
-                    )
-                }
-            ]
-            print(f"📏 Generating with max_new_tokens={dynamic_tokens}")
-            print("💭 Generating answer...")
-            raw_answer = self.llm.generate_from_messages(messages, max_new_tokens=dynamic_tokens)
-            raw_answer = raw_answer.strip()
-            # Strip any "**Personalized for X Constitution:**" block the LLM may have added
-            raw_answer = _re_raw.sub(
-                r'\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
-                '', raw_answer, flags=_re_raw.IGNORECASE
-            ).strip()
-            base_answer = self._restructure_answer(raw_answer, question=question)
-            print(f"✅ Generation complete!")
-            print(f"   Answer length: {len(base_answer)} chars")
-            print(f"   Answer preview: {base_answer[:200] if base_answer else '[EMPTY]'}...")
-            if not base_answer or len(base_answer.strip()) < 10:
-                print("⚠️  WARNING: Generated answer is empty or too short!")
-                print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
-                print(f"   Messages used: {str(messages)[:300]}...")
-                base_answer = "No specific information was found for this question in the Ayurvedic sources."
+            if _herb_match:
+                _raw_herb = _herb_match.group(0)
+                _herb_in_q = _HERB_ALIASES.get(_raw_herb.lower(), _raw_herb.title())
             else:
-                # Off-topic guard: if answer doesn't mention any key word from the question,
-                # the LLM hallucinated — extract relevant sentences from context instead.
-                import re as _re_guard
-                _stopwords = {
-                    'what', 'that', 'this', 'with', 'from', 'have', 'been', 'will', 'which',
-                    'when', 'they', 'their', 'should', 'does', 'good', 'more', 'some', 'into',
-                    'than', 'about', 'help', 'cause', 'ayur', 'ayurvedic', 'herb', 'body',
-                    'health', 'used', 'also', 'both', 'well', 'very', 'such', 'each', 'than',
-                }
-                _q_content = set(_re_guard.findall(r'\b[a-z]{4,}\b', question.lower())) - _stopwords
-                _a_content = set(_re_guard.findall(r'\b[a-z]{4,}\b', base_answer.lower())) - _stopwords
-                _overlap = _q_content & _a_content
-                if len(_overlap) < 1 and len(_q_content) > 0:
-                    print(f"⚠️  Off-topic answer detected (q_words={_q_content}, overlap={_overlap}) — extracting from context...")
-                    # Strip [Source X] header lines before extracting sentences
-                    _clean_ctx = _re_guard.sub(
-                        r'\[Source \d+\][\s\S]*?(?=\n\n|\Z)',
-                        lambda m: _re_guard.sub(r'^.*\n', '', m.group(0), count=4),
-                        context_text
-                    )
-                    _clean_ctx = _re_guard.sub(r'\[Source \d+\]', '', _clean_ctx)
-                    _clean_ctx = _re_guard.sub(r'Book:.*|Chapter:.*|Verse.*|Type:.*|Related Question:.*', '', _clean_ctx)
-                    _ctx_sents = _re_guard.split(r'(?<=[.!?])\s+', _clean_ctx.replace('\n', ' '))
-                    _scored_sents = []
-                    for _s in _ctx_sents:
-                        _s = _re_guard.sub(r'\s+', ' ', _s).strip()
-                        _s_words = set(_re_guard.findall(r'\b[a-z]{4,}\b', _s.lower())) - _stopwords
-                        _score = len(_s_words & _q_content)
-                        if _score > 0 and 25 <= len(_s.strip()) <= 220:
-                            _scored_sents.append((_score, _s.strip()))
-                    _scored_sents.sort(key=lambda x: -x[0])
-                    if _scored_sents:
-                        _extracted = [s for _, s in _scored_sents[:2]]
-                        base_answer = '\n'.join(f'\u2022 {s}' for s in _extracted)
-                        print(f"✅ Context extraction fallback: {base_answer[:120]}...")
-                    else:
-                        base_answer = "No specific information was found for this question in the Ayurvedic sources."
+                _herb_in_q = ''
+
+            # 2. Build question keyword set; add canonical herb so misspellings still match
+            _stopwords = {
+                'what', 'that', 'this', 'with', 'from', 'have', 'been', 'will', 'which',
+                'when', 'they', 'their', 'should', 'does', 'good', 'more', 'some', 'into',
+                'than', 'about', 'help', 'cause', 'ayur', 'ayurvedic', 'herb', 'body',
+                'health', 'used', 'also', 'both', 'well', 'very', 'such', 'each', 'than',
+            }
+            _q_content = set(_re_ctx.findall(r'\b[a-z]{4,}\b', question.lower())) - _stopwords
+            _q_content_ctx = _q_content | ({_herb_in_q.lower()} if _herb_in_q else set())
+
+            # 3. Strip metadata header lines from context so we only score real text
+            _clean_ctx = _re_ctx.sub(r'\[Source \d+\]', '', context_text)
+            _clean_ctx = _re_ctx.sub(
+                r'(?m)^(?:Book|Chapter|Verse|Verse/Paragraph|Type|Related Question):.*\n?', '', _clean_ctx
+            )
+
+            # 4. Score every sentence by keyword overlap with the question
+            _ctx_sents = _re_ctx.split(r'(?<=[.!?])\s+', _clean_ctx.replace('\n', ' '))
+            _scored_sents = []
+            for _s in _ctx_sents:
+                _s = _re_ctx.sub(r'\s+', ' ', _s).strip()
+                if not (30 <= len(_s) <= 260):
+                    continue
+                _s_words = set(_re_ctx.findall(r'\b[a-z]{4,}\b', _s.lower())) - _stopwords
+                _score = len(_s_words & _q_content_ctx)
+                if _score > 0:
+                    _scored_sents.append((_score, _s))
+
+            _scored_sents.sort(key=lambda x: -x[0])
+
+            # 5. Deduplicate: skip sentences that share >60% keywords with already-chosen ones
+            _deduped: list = []
+            _seen_kws: set = set()
+            for _sc, _s in _scored_sents:
+                _kws = set(_re_ctx.findall(r'\b[a-z]{5,}\b', _s.lower())) - _stopwords
+                if _kws:
+                    if len(_kws & _seen_kws) / len(_kws) >= 0.6:
+                        continue
+                    _seen_kws.update(_kws)
+                _deduped.append(_s)
+                if len(_deduped) >= 3:
+                    break
+
+            # 6. Build bullet points
+            if _deduped:
+                _polished = []
+                for _s in _deduped:
+                    _s = _s[0].upper() + _s[1:]
+                    if _s[-1] not in '.!?':
+                        _s += '.'
+                    _polished.append(_s)
+                base_answer = '\n'.join(f'\u2022 {s}' for s in _polished)
+                print(f"✅ Context extraction answer: {base_answer[:120]}...")
+            else:
+                base_answer = "No specific information was found for this question in the Ayurvedic sources."
+                print("⚠️  No relevant sentences found in context.")
         
         # Validate
         validation_result = None
