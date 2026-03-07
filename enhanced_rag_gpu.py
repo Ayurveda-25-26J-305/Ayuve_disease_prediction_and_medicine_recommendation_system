@@ -1148,15 +1148,29 @@ Related Question: {question}
             # No LLM → no hallucination, no off-topic answers, always stable.
             import re as _re_ctx
 
-            # 1. Detect canonical herb name (handles common misspellings)
-            _HERB_ALIASES = {'tumeric': 'Turmeric'}
-            _herb_match = _re_ctx.search(
+            # 1. Detect canonical herb name (handles misspellings + romanized Sinhala)
+            # These aliases map romanized Sinhala names and common misspellings to the
+            # English canonical form that appears in the Ayurvedic book text.
+            _HERB_ALIASES = {
+                'tumeric':   'Turmeric',
+                'kurudu':    'Cinnamon',
+                'inguru':    'Ginger',
+                'kaha':      'Turmeric',
+                'kohomba':   'Neem',
+                'welpenela': 'Brahmi',
+                'gotukola':  'Brahmi',
+                'nelli':     'Amla',
+            }
+            _HERB_PATTERN = (
                 r'\b(turmeric|tumeric|cinnamon|ginger|neem|ashwagandha|triphala|tulsi|aloe vera|'
                 r'brahmi|shatavari|cardamom|cumin|fenugreek|amla|nelli|kohomba|kurudu|'
                 r'inguru|kaha|welpenela|gotukola|licorice|pepper|clove|nutmeg|garlic|'
-                r'curry leaf|moringa|sesame|coconut|ghee)\b',
-                question.lower()
+                r'curry leaf|moringa|sesame|coconut|ghee)\b'
             )
+            # Try translated question first; fall back to original (romanized) question
+            _herb_match = _re_ctx.search(_HERB_PATTERN, question.lower())
+            if not _herb_match:
+                _herb_match = _re_ctx.search(_HERB_PATTERN, original_question.lower())
             if _herb_match:
                 _raw_herb = _herb_match.group(0)
                 _herb_in_q = _HERB_ALIASES.get(_raw_herb.lower(), _raw_herb.title())
