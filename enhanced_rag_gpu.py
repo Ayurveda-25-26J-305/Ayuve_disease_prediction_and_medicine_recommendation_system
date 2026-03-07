@@ -203,6 +203,14 @@ Related Question: {question}
             # Garbled LLM filler
             'however, based', 'however, as mentioned', 'however, the',
             'as mentioned, the', 'as mentioned above',
+            # Meta-commentary about sources / text snippets
+            'hence both', 'both text', 'text snippet', 'both snippet', 'both passage',
+            'both source', 'both confirm', 'hence the text', 'hence the source',
+            'both extracts', 'both of the', 'the two text', 'the two source',
+            'snippets confirm', 'passages confirm', 'sources confirm',
+            'both explicitly', 'both implicitly', 'both mention',
+            'all told', 'all in all', 'taking all', 'putting it all',
+            'finally these', 'finally, these', 'finally both',
         ]
         # Also reject sentences containing strongly informal/hallucinated markers mid-sentence
         INFORMAL_REJECT = re.compile(
@@ -678,7 +686,11 @@ Related Question: {question}
             r'are there any|is there any|can i use|should i take|can i take|should i|'
             r'tell me about|tell me the|explain|describe|'
             r'benefits of|uses of|properties of|effects of|'
-            r'what dosha does|which dosha|which herb|which herbs)\s+',
+            r'what dosha does|which dosha|which herb|which herbs|'
+            r'is there a|is it safe|is it good|is it ok|is it ok|'
+            r'is\s+\w+\s+good|is\s+\w+\s+safe|is\s+\w+\s+ok|is\s+\w+\s+bad|'
+            r'is\s+\w+\s+helpful|is\s+\w+\s+effective|is\s+\w+\s+beneficial|'
+            r'are\s+\w+\s+good|are\s+\w+\s+safe|are\s+\w+\s+ok)\s+',
             '', _q, flags=_re.IGNORECASE
         ).strip().strip('?').strip()
 
@@ -689,7 +701,8 @@ Related Question: {question}
 
         # Strip trailing verb / conjunction phrases
         topic_raw = _re.sub(
-            r'\s+(help\s*\w*|helps?|reduce\w*|balance\w*|support\w*|cure\w*|treat\w*|'
+            r'\s+(good|safe|helpful|beneficial|effective|useful|okay|ok|bad|harmful|'
+            r'help\s*\w*|helps?|reduce\w*|balance\w*|support\w*|cure\w*|treat\w*|'
             r'do|does|is|are|used|with|for|should|take|daily|morning|each|every|and|or).*$',
             '', topic_raw, flags=_re.IGNORECASE
         ).strip()
@@ -1127,6 +1140,35 @@ Related Question: {question}
                 print(f"   Raw answer: {raw_answer[:300] if raw_answer else '[NONE]'}...")
                 print(f"   Messages used: {str(messages)[:300]}...")
                 base_answer = "No specific information was found for this question in the Ayurvedic sources."
+            else:
+                # Off-topic guard: if answer doesn't mention any key word from the question,
+                # the LLM hallucinated — extract relevant sentences from context instead.
+                import re as _re_guard
+                _stopwords = {
+                    'what', 'that', 'this', 'with', 'from', 'have', 'been', 'will', 'which',
+                    'when', 'they', 'their', 'should', 'does', 'good', 'more', 'some', 'into',
+                    'than', 'about', 'help', 'cause', 'ayur', 'ayurvedic', 'herb', 'body',
+                    'health', 'used', 'also', 'both', 'well', 'very', 'such', 'each', 'than',
+                }
+                _q_content = set(_re_guard.findall(r'\b[a-z]{4,}\b', question.lower())) - _stopwords
+                _a_content = set(_re_guard.findall(r'\b[a-z]{4,}\b', base_answer.lower())) - _stopwords
+                _overlap = _q_content & _a_content
+                if len(_overlap) < 1 and len(_q_content) > 0:
+                    print(f"⚠️  Off-topic answer detected (q_words={_q_content}, overlap={_overlap}) — extracting from context...")
+                    _ctx_sents = _re_guard.split(r'(?<=[.!?])\s+', context_text.replace('\n', ' '))
+                    _scored_sents = []
+                    for _s in _ctx_sents:
+                        _s_words = set(_re_guard.findall(r'\b[a-z]{4,}\b', _s.lower())) - _stopwords
+                        _score = len(_s_words & _q_content)
+                        if _score > 0 and 25 <= len(_s.strip()) <= 250:
+                            _scored_sents.append((_score, _s.strip()))
+                    _scored_sents.sort(key=lambda x: -x[0])
+                    if _scored_sents:
+                        _extracted = [s for _, s in _scored_sents[:2]]
+                        base_answer = '\n'.join(f'\u2022 {s}' for s in _extracted)
+                        print(f"✅ Context extraction fallback: {base_answer[:120]}...")
+                    else:
+                        base_answer = "No specific information was found for this question in the Ayurvedic sources."
         
         # Validate
         validation_result = None

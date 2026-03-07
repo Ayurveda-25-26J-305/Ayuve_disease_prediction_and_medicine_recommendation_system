@@ -87,6 +87,9 @@ def initialize_system():
         embedding_model=config['embedding_model']
     )
     print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
+    # Clear answer cache on every startup so old bad answers don't persist
+    rag_system._answer_cache.clear()
+    print("✓ Answer cache cleared")
     
     print("\n" + "=" * 70)
     print("✓ Backend ready to serve requests")
