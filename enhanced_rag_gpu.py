@@ -135,6 +135,34 @@ Related Question: {question}
 
         text = raw.strip()
 
+        # 0. If LLM returned bullet format (starts with '-' or '•'), parse directly
+        import re as _re_bullet
+        if _re_bullet.search(r'^\s*[-•]', text, _re_bullet.MULTILINE):
+            bullet_lines = []
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                # Strip bullet marker
+                line = _re_bullet.sub(r'^[-•\*]\s*', '', line).strip()
+                # Strip [Source X] and metadata noise
+                line = _re_bullet.sub(r'\[Source \d+\].*', '', line).strip()
+                line = _re_bullet.sub(r'Book:.*|Chapter:.*|Verse.*', '', line).strip()
+                if len(line) < 15:
+                    continue
+                low = line.lower()
+                if any(low.startswith(f) for f in [
+                    'according to', 'based on', 'as per', 'from source',
+                    'source', 'note that', 'please', 'however',
+                ]):
+                    continue
+                if not line[-1] in '.!?':
+                    line = line + '.'
+                line = line[0].upper() + line[1:]
+                bullet_lines.append(line)
+            if bullet_lines:
+                return '\n'.join(f'\u2022 {b}' for b in bullet_lines[:3])
+
         # 1. Strip leading attribution: "According to X, " / "Based on X, " / "X states that "
         text = re.sub(
             r'^(?:According\s+to|Based\s+on|As\s+per|Per|From)\s+[^,;.]{0,80}[,;]\s*',
@@ -707,6 +735,9 @@ Related Question: {question}
             '', topic_raw, flags=_re.IGNORECASE
         ).strip()
 
+        # Strip standalone pronoun/article left as leading artifact: "i ", "my ", "your ", "the "
+        topic_raw = _re.sub(r'^(i|my|your|our|the|a|an)\s+', '', topic_raw, flags=_re.IGNORECASE).strip()
+
         # Remove trailing filler words and punctuation
         topic_raw = _re.sub(r'\s+(in ayurveda|ayurvedic|for health|for body|for|in|to|with|a|an|the)$', '', topic_raw, flags=_re.IGNORECASE).strip()
         topic_raw = topic_raw.strip('?)(.,')
@@ -728,6 +759,11 @@ Related Question: {question}
             'mean', 'general', 'use', 'using', 'used', 'consume', 'consumption',
             'daily', 'morning', 'evening', 'right', 'proper', 'best',
             'health', 'body', 'blood', 'sugar', 'water', 'milk', 'intake',
+            # Multi-word question fragments that slip through
+            'improve', 'digestion', 'digestions', 'diagestion', 'function',
+            'sleep', 'stress', 'energy', 'weight', 'immunity', 'inflammation',
+            'better', 'boost', 'increase', 'decrease', 'prevent', 'control',
+            'manage', 'reduce', 'balance', 'detox', 'cleanse', 'heal',
         }
         topic_words = set(topic_raw.lower().split())
         _is_bad_topic = not topic_raw or len(topic_raw) < 3 or topic_words.issubset(_bad_topics)
@@ -1107,16 +1143,33 @@ Related Question: {question}
         else:
             # ── NORMAL PATH: LLM generates from retrieved docs ───────────────────
             context_summary = context_text[:600]  # ~150 tokens of context
+            # Extract just the herb/topic name from the question for focused prompting
+            import re as _re_prompt
+            _herb_match = _re_prompt.search(
+                r'\b(turmeric|cinnamon|ginger|neem|ashwagandha|triphala|tulsi|aloe vera|'
+                r'brahmi|shatavari|cardamom|cumin|fenugreek|amla|nelli|kohomba|kurudu|'
+                r'inguru|kaha|welpenela|gotukola|licorice|pepper|clove|nutmeg|garlic|'
+                r'curry leaf|moringa|sesame|coconut|ghee)\b',
+                question.lower()
+            )
+            _herb_in_q = _herb_match.group(0).title() if _herb_match else ''
+            _subject_hint = f" About: {_herb_in_q}." if _herb_in_q else ''
             messages = [
                 {
                     "role": "user",
                     "content": (
-                        f"You are an Ayurvedic health assistant. "
-                        f"Using ONLY the sources below, write 2-3 short sentences that directly answer the question. "
-                        f"Use simple everyday English that anyone can understand — do NOT use heavy Ayurvedic, medical, or scientific terms. "
-                        f"Start each sentence with a subject (herb name, dosha name, or food) followed by what it does. "
-                        f"Example: 'Turmeric reduces swelling in the body.' or 'Vata dosha controls movement and breathing.' "
-                        f"Do NOT say 'According to', do NOT mention book titles or sources.\n\n"
+                        f"You are an Ayurvedic health assistant.{_subject_hint}\n"
+                        f"Using ONLY the sources below, write exactly 2 bullet points that directly answer the question.\n"
+                        f"Each bullet must:\n"
+                        f"- Start with '- '\n"
+                        f"- Begin with the subject name (herb, food, or practice)\n"
+                        f"- Be one short sentence (max 20 words)\n"
+                        f"- Use simple everyday English\n"
+                        f"- State what it DOES or what it HELPS with\n"
+                        f"Example format:\n"
+                        f"- Turmeric reduces inflammation and joint pain in the body.\n"
+                        f"- Turmeric supports liver health and improves digestion.\n"
+                        f"Do NOT mention book titles, sources, chapters, or use 'According to'.\n\n"
                         f"Sources:\n{context_summary}\n\n"
                         f"Question: {question}"
                     )
@@ -1155,12 +1208,21 @@ Related Question: {question}
                 _overlap = _q_content & _a_content
                 if len(_overlap) < 1 and len(_q_content) > 0:
                     print(f"⚠️  Off-topic answer detected (q_words={_q_content}, overlap={_overlap}) — extracting from context...")
-                    _ctx_sents = _re_guard.split(r'(?<=[.!?])\s+', context_text.replace('\n', ' '))
+                    # Strip [Source X] header lines before extracting sentences
+                    _clean_ctx = _re_guard.sub(
+                        r'\[Source \d+\][\s\S]*?(?=\n\n|\Z)',
+                        lambda m: _re_guard.sub(r'^.*\n', '', m.group(0), count=4),
+                        context_text
+                    )
+                    _clean_ctx = _re_guard.sub(r'\[Source \d+\]', '', _clean_ctx)
+                    _clean_ctx = _re_guard.sub(r'Book:.*|Chapter:.*|Verse.*|Type:.*|Related Question:.*', '', _clean_ctx)
+                    _ctx_sents = _re_guard.split(r'(?<=[.!?])\s+', _clean_ctx.replace('\n', ' '))
                     _scored_sents = []
                     for _s in _ctx_sents:
+                        _s = _re_guard.sub(r'\s+', ' ', _s).strip()
                         _s_words = set(_re_guard.findall(r'\b[a-z]{4,}\b', _s.lower())) - _stopwords
                         _score = len(_s_words & _q_content)
-                        if _score > 0 and 25 <= len(_s.strip()) <= 250:
+                        if _score > 0 and 25 <= len(_s.strip()) <= 220:
                             _scored_sents.append((_score, _s.strip()))
                     _scored_sents.sort(key=lambda x: -x[0])
                     if _scored_sents:
