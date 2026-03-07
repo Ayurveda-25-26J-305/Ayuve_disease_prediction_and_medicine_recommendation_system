@@ -1124,6 +1124,100 @@ Related Question: {question}
                 break
         # ── END CONCEPT KNOWLEDGE BASE ───────────────────────────────────────────
 
+        # ── HERB KNOWLEDGE BASE ──────────────────────────────────────────────────
+        # Curated 3-sentence facts for common Ayurvedic herbs — same fast-path as
+        # CONCEPT_KB. Guarantees stable answers regardless of vector search quality.
+        # Covers English names, misspellings, and romanized Sinhala aliases.
+        HERB_KB = {
+            'Turmeric': (
+                "Turmeric is used in Ayurveda to reduce inflammation, support liver health, and purify the blood. "
+                "Its active compound curcumin has powerful antioxidant and anti-inflammatory effects that help joint pain and digestion. "
+                "Turmeric balances all three doshas and is best taken with warm milk, ghee, or black pepper to improve absorption."
+            ),
+            'Cinnamon': (
+                "Cinnamon is a warming digestive herb in Ayurveda that stimulates Agni (digestive fire) and reduces gas and bloating. "
+                "It helps control blood sugar levels, improves circulation in the body, and reduces Vata and Kapha imbalances. "
+                "Cinnamon is taken with honey or warm water each morning in Ayurveda to improve metabolism and digestive health."
+            ),
+            'Ginger': (
+                "Ginger is called the universal Ayurvedic medicine because it stimulates digestion, relieves nausea, and clears toxins. "
+                "It reduces gas, bloating, and indigestion, and also helps with respiratory congestion and joint inflammation. "
+                "Ginger balances Vata and Kapha doshas and is most effective when taken fresh with lemon juice and warm water."
+            ),
+            'Neem': (
+                "Neem is a powerful Ayurvedic herb used for its antibacterial, antifungal, and blood-purifying properties. "
+                "It helps treat skin conditions, reduces Pitta-related heat and rashes, and supports liver detoxification. "
+                "Neem leaf juice, oil, or powder is used in Ayurveda to balance Pitta and Kapha doshas and boost immunity."
+            ),
+            'Ashwagandha': (
+                "Ashwagandha is a powerful Ayurvedic adaptogen that reduces stress, anxiety, and chronic fatigue. "
+                "It strengthens the immune system, supports muscle recovery, and improves sleep quality and mental focus. "
+                "Ashwagandha is classified as a Rasayana herb in Ayurveda that builds long-term vitality and balances Vata dosha."
+            ),
+            'Triphala': (
+                "Triphala is a classical Ayurvedic formula made of three fruits — Amalaki, Bibhitaki, and Haritaki. "
+                "It supports gentle detoxification, relieves constipation, and improves digestion and nutrient absorption. "
+                "Triphala balances all three doshas and is recommended as a daily tonic for digestive health and immunity."
+            ),
+            'Brahmi': (
+                "Brahmi is an Ayurvedic herb known for its brain-nourishing and nervine tonic properties. "
+                "It improves memory, concentration, and mental clarity, and significantly reduces anxiety and stress. "
+                "Brahmi balances Vata and Pitta doshas and is applied as scalp oil or consumed as powder for brain health."
+            ),
+            'Amla': (
+                "Amla is the richest natural source of Vitamin C and a key Ayurvedic Rasayana rejuvenating herb. "
+                "It boosts immunity, improves digestion and liver function, and supports healthy skin and hair growth. "
+                "Amla balances all three doshas and is a main ingredient in Triphala and Chyawanprash formulas."
+            ),
+            'Tulsi': (
+                "Tulsi is a sacred Ayurvedic herb with strong antibacterial, antiviral, and immune-boosting properties. "
+                "It relieves respiratory infections, reduces stress and anxiety, improves digestion, and purifies the blood. "
+                "Tulsi balances Vata and Kapha doshas and is consumed daily as herbal tea or fresh juice for immune support."
+            ),
+            'Cardamom': (
+                "Cardamom is a cooling digestive spice in Ayurveda that relieves gas, nausea, and acidity after meals. "
+                "It freshens breath, supports respiratory health, and helps Pitta types manage excess heat and indigestion. "
+                "Cardamom is added to herbal preparations and warm milk to improve digestion and enhance absorption of other herbs."
+            ),
+            'Pepper': (
+                "Black pepper is called the king of spices in Ayurveda and is used to stimulate digestion and metabolism. "
+                "It helps clear respiratory congestion, boosts nutrient absorption (especially curcumin from turmeric), and kills toxins. "
+                "Black pepper balances Vata and Kapha doshas and is recommended in small daily amounts with food or herbal formulas."
+            ),
+            'Garlic': (
+                "Garlic is a powerful Ayurvedic herb used to improve circulation, reduce cholesterol, and fight infections. "
+                "It helps lower blood pressure, supports heart health, and has strong antibacterial and antifungal properties. "
+                "Garlic balances Vata and Kapha doshas and is most potent when consumed raw or lightly cooked each morning."
+            ),
+        }
+        # Aliases: English misspellings + romanized Sinhala → HERB_KB key
+        _HERB_KB_ALIASES = {
+            'turmeric': 'Turmeric', 'tumeric': 'Turmeric', 'kaha': 'Turmeric', 'haridra': 'Turmeric',
+            'cinnamon': 'Cinnamon', 'kurudu': 'Cinnamon', 'dalchini': 'Cinnamon', 'twak': 'Cinnamon',
+            'ginger': 'Ginger', 'inguru': 'Ginger', 'shunti': 'Ginger',
+            'neem': 'Neem', 'kohomba': 'Neem', 'nimba': 'Neem',
+            'ashwagandha': 'Ashwagandha', 'aswagandha': 'Ashwagandha',
+            'triphala': 'Triphala',
+            'brahmi': 'Brahmi', 'welpenela': 'Brahmi', 'gotukola': 'Brahmi',
+            'amla': 'Amla', 'nelli': 'Amla', 'amalaki': 'Amla',
+            'tulsi': 'Tulsi', 'basil': 'Tulsi',
+            'cardamom': 'Cardamom', 'elachi': 'Cardamom',
+            'pepper': 'Pepper',
+            'garlic': 'Garlic',
+        }
+        # Check translated question first, then original (catches romanized Sinhala)
+        import re as _re_herb_kb
+        if not _injected_context:
+            for _q_check in (question.lower(), original_question.lower()):
+                for _alias, _kb_key in _HERB_KB_ALIASES.items():
+                    if _re_herb_kb.search(r'\b' + _re_herb_kb.escape(_alias) + r'\b', _q_check):
+                        _injected_context = HERB_KB[_kb_key]
+                        print(f"🌿 Herb KB fast-path: '{_kb_key}' — using curated facts")
+                        break
+                if _injected_context:
+                    break
+        # ── END HERB KNOWLEDGE BASE ──────────────────────────────────────────────
+
         # Build context
         context_text = self._build_context_with_citations(top_context_docs)
         
