@@ -208,7 +208,6 @@ export default function Home() {
       }
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
     const rawSessions = localStorage.getItem("ayurveda_sessions");
     const loadedSessions: ChatSession[] = rawSessions
       ? JSON.parse(rawSessions)
@@ -216,6 +215,7 @@ export default function Home() {
     setSessions(loadedSessions);
     const newSessionId = "sess_" + Date.now();
     setCurrentSessionId(newSessionId);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
@@ -1049,14 +1049,13 @@ export default function Home() {
             <span className="stat-value">{stats.modelName}</span>
             <span className="stat-label">Model</span>
           </div>
-          <div
-            className="stat-item"
-          >
+          <div className="stat-item">
             {/* YOUR DOSHA ICON HERE */}
             <span className="stat-icon"></span>
             <span className="stat-value" style={{ fontSize: "0.95em" }}>
               {dominantDosha
-                ? dominantDosha.charAt(0).toUpperCase() + dominantDosha.slice(1).toLowerCase()
+                ? dominantDosha.charAt(0).toUpperCase() +
+                  dominantDosha.slice(1).toLowerCase()
                 : "Not Set"}
             </span>
             <span className="stat-label">My Dosha</span>
