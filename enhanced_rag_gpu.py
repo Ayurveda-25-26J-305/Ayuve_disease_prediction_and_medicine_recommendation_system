@@ -1163,15 +1163,23 @@ Related Question: {question}
             else:
                 _herb_in_q = ''
 
-            # 2. Build question keyword set; add canonical herb so misspellings still match
+            # 2. Build scoring helpers
             _stopwords = {
                 'what', 'that', 'this', 'with', 'from', 'have', 'been', 'will', 'which',
                 'when', 'they', 'their', 'should', 'does', 'good', 'more', 'some', 'into',
                 'than', 'about', 'help', 'cause', 'ayur', 'ayurvedic', 'herb', 'body',
                 'health', 'used', 'also', 'both', 'well', 'very', 'such', 'each', 'than',
             }
-            _q_content = set(_re_ctx.findall(r'\b[a-z]{4,}\b', question.lower())) - _stopwords
-            _q_content_ctx = _q_content | ({_herb_in_q.lower()} if _herb_in_q else set())
+            # Benefit-action verbs — sentences with these are almost always informative
+            _BENEFIT_VERBS = _re_ctx.compile(
+                r'\b(helps?|reduces?|supports?|improves?|treats?|benefits?|boosts?|aids?|'
+                r'relieves?|contains?|promotes?|prevents?|cures?|heals?|stimulates?|'
+                r'strengthens?|purifies?|balances?|calms?|increases?|decreases?|'
+                r'useful|effective|beneficial|healing|medicinal|therapeutic|'
+                r'anti.inflam|antiseptic|antioxidant|digestive|tonic|expectorant)\b',
+                _re_ctx.IGNORECASE
+            )
+            _herb_lower = _herb_in_q.lower() if _herb_in_q else ''
 
             # 3. Strip metadata header lines from context so we only score real text
             _clean_ctx = _re_ctx.sub(r'\[Source \d+\]', '', context_text)
@@ -1179,27 +1187,36 @@ Related Question: {question}
                 r'(?m)^(?:Book|Chapter|Verse|Verse/Paragraph|Type|Related Question):.*\n?', '', _clean_ctx
             )
 
-            # 4. Score every sentence by keyword overlap with the question
+            # 4. Score every sentence:
+            #    +3  herb name appears in sentence  (handles "Turmeric reduces...")
+            #    +2  benefit verb present           (handles "It reduces inflammation")
+            #    +1  per extra question-keyword hit (handles general overlap)
             _ctx_sents = _re_ctx.split(r'(?<=[.!?])\s+', _clean_ctx.replace('\n', ' '))
             _scored_sents = []
             for _s in _ctx_sents:
                 _s = _re_ctx.sub(r'\s+', ' ', _s).strip()
-                if not (30 <= len(_s) <= 260):
+                if not (30 <= len(_s) <= 350):
                     continue
-                _s_words = set(_re_ctx.findall(r'\b[a-z]{4,}\b', _s.lower())) - _stopwords
-                _score = len(_s_words & _q_content_ctx)
+                _s_lower = _s.lower()
+                _score = 0
+                if _herb_lower and _herb_lower in _s_lower:
+                    _score += 3
+                if _BENEFIT_VERBS.search(_s):
+                    _score += 2
+                _s_words = set(_re_ctx.findall(r'\b[a-z]{4,}\b', _s_lower)) - _stopwords
+                _score += len(_s_words & ({_herb_lower} if _herb_lower else set()))
                 if _score > 0:
                     _scored_sents.append((_score, _s))
 
             _scored_sents.sort(key=lambda x: -x[0])
 
-            # 5. Deduplicate: skip sentences that share >60% keywords with already-chosen ones
+            # 5. Deduplicate: skip sentences sharing >55% keywords with already-chosen ones
             _deduped: list = []
             _seen_kws: set = set()
             for _sc, _s in _scored_sents:
                 _kws = set(_re_ctx.findall(r'\b[a-z]{5,}\b', _s.lower())) - _stopwords
                 if _kws:
-                    if len(_kws & _seen_kws) / len(_kws) >= 0.6:
+                    if len(_kws & _seen_kws) / len(_kws) >= 0.55:
                         continue
                     _seen_kws.update(_kws)
                 _deduped.append(_s)
