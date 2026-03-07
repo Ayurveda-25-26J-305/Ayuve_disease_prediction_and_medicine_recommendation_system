@@ -76,6 +76,9 @@ class EnhancedAyurvedicRAG:
                 self.enable_translation = False
         else:
             self.translator = None
+
+        # In-memory cache: same question + same dosha → same answer every time
+        self._answer_cache: Dict[str, Any] = {}
         
         logger.info("EnhancedAyurvedicRAG initialized (GPU FORCED)")
     
@@ -894,15 +897,23 @@ Related Question: {question}
         return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
     def answer_question(
-        self, 
-        question: str, 
-        vector_db, 
+        self,
+        question: str,
+        vector_db,
         top_k: int = 5,
         user_profile: Optional[Dict[str, Any]] = None,
-        validation_top_k: int = 5
+        validation_top_k: int = 5,
+        dominant_dosha: Optional[str] = None
     ) -> Dict[str, Any]:
         """Answer question with validation, personalization, and translation"""
         logger.info(f"Processing question: {question[:50]}...")
+
+        # === ANSWER CACHE: same question + same dosha always returns same answer ===
+        import copy as _copy
+        _cache_key = f"{question.lower().strip()}::{(dominant_dosha or '').lower()}"
+        if _cache_key in self._answer_cache:
+            print(f"✅ Cache hit — returning cached answer for: {question[:60]}...")
+            return _copy.deepcopy(self._answer_cache[_cache_key])
         
         # === TRANSLATION: Detect language and translate question if needed ===
         original_question = question
@@ -1147,8 +1158,11 @@ Related Question: {question}
             r'\n*\*{0,2}Personalized\s+for[^\n]*:?\*{0,2}[\s\S]*$',
             '', final_answer, flags=_re_pers.IGNORECASE
         ).strip()
-        # Use saved Prakriti profile dosha if available; otherwise detect from question
-        if user_profile and user_profile.get('dominant_dosha') and user_profile['dominant_dosha'] not in ('N/A', '', None):
+        # Dosha priority: 1) passed in directly from frontend, 2) user profile, 3) detect from text
+        if dominant_dosha and dominant_dosha.strip() not in ('', 'General', 'N/A', 'none'):
+            detected_dosha = dominant_dosha.strip().capitalize()
+            print(f"🧬 Using passed dominant_dosha: {detected_dosha}")
+        elif user_profile and user_profile.get('dominant_dosha') and user_profile['dominant_dosha'] not in ('N/A', '', None):
             detected_dosha = user_profile['dominant_dosha'].capitalize()
             print(f"🧬 Using profile dosha: {detected_dosha}")
         else:
@@ -1280,7 +1294,14 @@ Related Question: {question}
                 "dominant_dosha": user_profile.get('dominant_dosha', 'N/A'),
                 "current_season": user_profile.get('current_season', 'N/A')
             }
-        
+
+        # Always surface which dosha was used (so frontend can display it)
+        response["user_info"] = response.get("user_info") or {}
+        response["user_info"]["dominant_dosha"] = detected_dosha
+
+        # Store in cache so the same question always returns the same answer
+        self._answer_cache[_cache_key] = response
+
         return response
     
     def create_user_profile(self, user_id: str, prakriti_responses: Dict[str, str]) -> Dict[str, Any]:

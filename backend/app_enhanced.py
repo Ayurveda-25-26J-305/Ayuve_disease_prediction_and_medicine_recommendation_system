@@ -190,6 +190,7 @@ def ask_question():
         
         question = data['question'].strip()
         user_id = data.get('user_id', None)
+        dominant_dosha = data.get('dominant_dosha', None)
         
         if not question:
             return jsonify({
@@ -216,7 +217,8 @@ def ask_question():
             vector_db=vector_db,
             top_k=config.get('top_k', 3),
             user_profile=user_profile,
-            validation_top_k=5
+            validation_top_k=5,
+            dominant_dosha=dominant_dosha
         )
         
         # Format citations with validation info

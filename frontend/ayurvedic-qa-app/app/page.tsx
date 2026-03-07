@@ -39,101 +39,6 @@ interface ChatSession {
   messages: Message[];
 }
 
-// --- Prakriti ---
-
-const PRAKRITI_QUESTIONS = [
-  {
-    id: "q1",
-    question: "What is your body frame and build?",
-    options: {
-      A: "Thin, light frame, hard to gain weight",
-      B: "Medium build, muscular, athletic",
-      C: "Heavy, sturdy frame, easy to gain weight",
-    },
-  },
-  {
-    id: "q2",
-    question: "How is your digestion typically?",
-    options: {
-      A: "Irregular, often gas or bloating",
-      B: "Strong, feel hungry often, can't skip meals",
-      C: "Slow but steady, can skip meals easily",
-    },
-  },
-  {
-    id: "q3",
-    question: "What is your skin type?",
-    options: {
-      A: "Dry, rough, thin, gets dry patches",
-      B: "Warm, oily, prone to rashes or acne",
-      C: "Thick, moist, smooth, oily",
-    },
-  },
-  {
-    id: "q4",
-    question: "How do you handle stress?",
-    options: {
-      A: "Anxious, worried, mind races",
-      B: "Irritable, angry, impatient",
-      C: "Calm, withdrawn, avoid confrontation",
-    },
-  },
-  {
-    id: "q5",
-    question: "What is your sleep pattern like?",
-    options: {
-      A: "Light sleeper, difficulty falling asleep",
-      B: "Moderate sleep, wake refreshed",
-      C: "Heavy sleeper, need lots of sleep",
-    },
-  },
-  {
-    id: "q6",
-    question: "How is your energy level?",
-    options: {
-      A: "Comes in bursts, get tired easily",
-      B: "Consistent and strong",
-      C: "Steady and enduring, slow to start",
-    },
-  },
-  {
-    id: "q7",
-    question: "What is your temperature preference?",
-    options: {
-      A: "Prefer warm weather, dislike cold",
-      B: "Prefer cool weather, dislike heat",
-      C: "Comfortable in most weather",
-    },
-  },
-  {
-    id: "q8",
-    question: "How do you learn and remember?",
-    options: {
-      A: "Learn quickly, forget quickly, creative",
-      B: "Sharp intellect, good memory, focused",
-      C: "Learn slowly but retain well",
-    },
-  },
-  {
-    id: "q9",
-    question: "What is your speaking style?",
-    options: {
-      A: "Fast talker, talkative, scattered",
-      B: "Precise, articulate, argumentative",
-      C: "Slow, melodious, measured",
-    },
-  },
-  {
-    id: "q10",
-    question: "How do you approach new activities?",
-    options: {
-      A: "Enthusiastic but may not finish",
-      B: "Focused and determined, competitive",
-      C: "Resistant to change, prefer routine",
-    },
-  },
-];
-
 // --- Follow-up question generator ---
 
 function generateFollowUps(question: string): string[] {
@@ -266,11 +171,9 @@ export default function Home() {
     dominant_dosha: string;
     current_season: string;
   } | null>(null);
-  const [showPrakritiQuiz, setShowPrakritiQuiz] = useState(false);
-  const [prakritiAnswers, setPrakritiAnswers] = useState<
-    Record<string, string>
-  >({});
-  const [prakritiSubmitting, setPrakritiSubmitting] = useState(false);
+  // Dominant dosha passed in from the disease-prediction module via localStorage.
+  // Teammate saves: localStorage.setItem("ayurveda_dominant_dosha", "Vata")
+  const [dominantDosha, setDominantDosha] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [sharedId, setSharedId] = useState<number | null>(null);
   const [lastQuestion, setLastQuestion] = useState<string>("");
@@ -295,6 +198,17 @@ export default function Home() {
     setUserId(id);
     const saved = localStorage.getItem("ayurveda_user_profile");
     if (saved) setUserProfile(JSON.parse(saved));
+    // Read dominant dosha set by teammate's disease-prediction module
+    const storedDosha = localStorage.getItem("ayurveda_dominant_dosha");
+    if (storedDosha) setDominantDosha(storedDosha);
+    // Listen for cross-tab updates from teammate's module
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "ayurveda_dominant_dosha" && e.newValue) {
+        setDominantDosha(e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
     const rawSessions = localStorage.getItem("ayurveda_sessions");
     const loadedSessions: ChatSession[] = rawSessions
       ? JSON.parse(rawSessions)
@@ -534,6 +448,7 @@ export default function Home() {
         body: JSON.stringify({
           question: finalQuestion,
           user_id: userId || undefined,
+          dominant_dosha: dominantDosha || undefined,
         }),
       });
       clearTimeout(timeoutId);
@@ -589,41 +504,6 @@ export default function Home() {
   const askExample = (question: string) => {
     setInput(question);
     setTimeout(() => askQuestion(question), 100);
-  };
-
-  const handlePrakritiAnswer = (questionId: string, choice: string) =>
-    setPrakritiAnswers((prev) => ({ ...prev, [questionId]: choice }));
-
-  const submitPrakriti = async () => {
-    if (Object.keys(prakritiAnswers).length < PRAKRITI_QUESTIONS.length) {
-      alert("Please answer all questions before submitting.");
-      return;
-    }
-    setPrakritiSubmitting(true);
-    try {
-      const res = await fetch("/api/prakriti/assess", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, responses: prakritiAnswers }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        const profile = {
-          dominant_dosha: data.profile.dominant_dosha,
-          current_season: data.profile.current_season,
-        };
-        setUserProfile(profile);
-        localStorage.setItem("ayurveda_user_profile", JSON.stringify(profile));
-        setShowPrakritiQuiz(false);
-        setPrakritiAnswers({});
-      } else {
-        alert("Failed to save profile: " + (data.error || "Unknown error"));
-      }
-    } catch {
-      alert("Could not connect to backend.");
-    } finally {
-      setPrakritiSubmitting(false);
-    }
   };
 
   const filteredSessions = sessions.filter((s) =>
@@ -1085,41 +965,41 @@ export default function Home() {
               justifyContent: "flex-end",
             }}
           >
-            {messages.length > 0 && (
-              <button
-                onClick={exportPDF}
-                title="Export as PDF"
-                style={{
-                  background: "none",
-                  border: "1px solid #d1fae5",
-                  borderRadius: "8px",
-                  padding: "5px 10px",
-                  cursor: "pointer",
-                  color: "#ffffff",
-                  fontSize: "0.82em",
-                  fontWeight: "600",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
+            <button
+              onClick={exportPDF}
+              title="Export as PDF"
+              disabled={messages.length === 0}
+              style={{
+                background: "none",
+                border: "1px solid #d1fae5",
+                borderRadius: "8px",
+                padding: "5px 10px",
+                cursor: messages.length === 0 ? "not-allowed" : "pointer",
+                color: "#ffffff",
+                fontSize: "0.82em",
+                fontWeight: "600",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                opacity: messages.length === 0 ? 0.45 : 1,
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Export PDF
-              </button>
-            )}
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Export PDF
+            </button>
             <button
               onClick={() => setShowBookmarks(!showBookmarks)}
               title="Bookmarks"
@@ -1171,169 +1051,17 @@ export default function Home() {
           </div>
           <div
             className="stat-item"
-            style={{ cursor: "pointer" }}
-            onClick={() => setShowPrakritiQuiz(!showPrakritiQuiz)}
           >
             {/* YOUR DOSHA ICON HERE */}
             <span className="stat-icon"></span>
             <span className="stat-value" style={{ fontSize: "0.95em" }}>
-              {userProfile
-                ? userProfile.dominant_dosha.charAt(0).toUpperCase() +
-                  userProfile.dominant_dosha.slice(1)
-                : "Set Profile"}
+              {dominantDosha
+                ? dominantDosha.charAt(0).toUpperCase() + dominantDosha.slice(1).toLowerCase()
+                : "Not Set"}
             </span>
-            <span className="stat-label">
-              {userProfile ? "My Dosha" : "Personalize"}
-            </span>
+            <span className="stat-label">My Dosha</span>
           </div>
         </div>
-
-        {showPrakritiQuiz && (
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #d1fae5",
-              borderRadius: "12px",
-              padding: "20px",
-              marginBottom: "16px",
-              maxHeight: "400px",
-              overflowY: "auto",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-              }}
-            >
-              <h3 style={{ color: "#059669", margin: 0 }}>
-                Prakriti Assessment
-              </h3>
-              {userProfile && (
-                <button
-                  onClick={() => {
-                    setUserProfile(null);
-                    localStorage.removeItem("ayurveda_user_profile");
-                  }}
-                  style={{
-                    fontSize: "0.8em",
-                    color: "#ef4444",
-                    background: "none",
-                    border: "1px solid #ef4444",
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Clear Profile
-                </button>
-              )}
-            </div>
-            {userProfile ? (
-              <div style={{ textAlign: "center", padding: "20px" }}>
-                <p
-                  style={{
-                    color: "#059669",
-                    fontWeight: "600",
-                    fontSize: "1.1em",
-                  }}
-                >
-                  Your Dominant Dosha:{" "}
-                  {userProfile.dominant_dosha.charAt(0).toUpperCase() +
-                    userProfile.dominant_dosha.slice(1)}
-                </p>
-                <p style={{ color: "#6b7280", fontSize: "0.9em" }}>
-                  Season: {userProfile.current_season} - Your answers will now
-                  be personalized
-                </p>
-                <button
-                  onClick={() => {
-                    setUserProfile(null);
-                    localStorage.removeItem("ayurveda_user_profile");
-                    setPrakritiAnswers({});
-                  }}
-                  style={{
-                    marginTop: "12px",
-                    color: "#6b7280",
-                    background: "none",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "6px",
-                    padding: "6px 14px",
-                    cursor: "pointer",
-                    fontSize: "0.9em",
-                  }}
-                >
-                  Retake Quiz
-                </button>
-              </div>
-            ) : (
-              <>
-                {PRAKRITI_QUESTIONS.map((q, idx) => (
-                  <div key={q.id} style={{ marginBottom: "16px" }}>
-                    <p
-                      style={{
-                        fontWeight: "600",
-                        color: "#1f2937",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      {idx + 1}. {q.question}
-                    </p>
-                    {Object.entries(q.options).map(([choice, text]) => (
-                      <label
-                        key={choice}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          marginBottom: "6px",
-                          cursor: "pointer",
-                          color:
-                            prakritiAnswers[q.id] === choice
-                              ? "#059669"
-                              : "#6b7280",
-                          fontWeight:
-                            prakritiAnswers[q.id] === choice ? "600" : "400",
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name={q.id}
-                          value={choice}
-                          checked={prakritiAnswers[q.id] === choice}
-                          onChange={() => handlePrakritiAnswer(q.id, choice)}
-                          style={{ accentColor: "#059669" }}
-                        />
-                        <span>
-                          {choice}: {text}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ))}
-                <button
-                  onClick={submitPrakriti}
-                  disabled={prakritiSubmitting}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    background: "#059669",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "8px",
-                    fontWeight: "600",
-                    cursor: prakritiSubmitting ? "not-allowed" : "pointer",
-                    opacity: prakritiSubmitting ? 0.7 : 1,
-                  }}
-                >
-                  {prakritiSubmitting ? "Saving..." : "Save My Profile"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
 
         <div className="chat-container">
           {showWelcome && (
