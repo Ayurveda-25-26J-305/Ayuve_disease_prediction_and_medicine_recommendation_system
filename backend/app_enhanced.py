@@ -32,6 +32,7 @@ CORS(app, resources={r"/*": {
 
 # Global variables for system components
 vector_db = None
+web_db = None        # NEW: Web knowledge FAISS index
 rag_system = None
 config = None
 
@@ -45,7 +46,7 @@ def load_config():
 
 def initialize_system():
     """Initialize vector DB and Enhanced LLM on startup"""
-    global vector_db, rag_system, config
+    global vector_db, web_db, rag_system, config
     
     print("=" * 70)
     print("Initializing Enhanced Ayurvedic QA System Backend")
@@ -55,10 +56,9 @@ def initialize_system():
     config = load_config()
     print("\n✓ Config loaded")
     
-    # Load vector database
-    print("\n🔄 Loading vector database...")
+    # Load BOOK vector database
+    print("\n🔄 Loading book vector database...")
     
-    # Get the project root directory (parent of backend)
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(backend_dir)
     index_path = os.path.join(project_root, config['index_path'])
@@ -71,10 +71,28 @@ def initialize_system():
     )
     
     if vector_db.load_index():
-        print(f"✓ Loaded vector database with {vector_db.index.ntotal} documents")
+        print(f"✓ Loaded book database with {vector_db.index.ntotal} documents")
     else:
-        print("❌ Failed to load vector database")
+        print("❌ Failed to load book vector database")
         return False
+    
+    # Load WEB vector database (optional — only if it exists)
+    web_index_path = os.path.join(project_root, "faiss_index_web")
+    if os.path.exists(os.path.join(web_index_path, "index.faiss")):
+        print("\n🔄 Loading web knowledge database...")
+        web_db = FAISSVectorDB(
+            embedding_model_name=config['embedding_model'],
+            index_path=web_index_path
+        )
+        if web_db.load_index():
+            print(f"✓ Loaded web database with {web_db.index.ntotal} web documents")
+        else:
+            print("⚠️  Web index found but failed to load — proceeding books-only")
+            web_db = None
+    else:
+        print("\nℹ️  No web knowledge index found (faiss_index_web/)")
+        print("   Run 'python run_web_pipeline.py' to build it.")
+        web_db = None
     
     # Initialize Enhanced LLM with validation and personalization
     print("\n🔄 Loading Enhanced LLM (this may take a minute)...")
@@ -83,16 +101,15 @@ def initialize_system():
         max_new_tokens=config.get('max_new_tokens', 128),
         enable_validation=True,
         enable_personalization=True,
-        enable_translation=True,  # Enabled: auto-detects Sinhala and translates answers
+        enable_translation=True,
         embedding_model=config['embedding_model']
     )
     print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
-    # Clear answer cache on every startup so old bad answers don't persist
     rag_system._answer_cache.clear()
     print("✓ Answer cache cleared")
     
     print("\n" + "=" * 70)
-    print("✓ Backend ready to serve requests")
+    print(f"✓ Backend ready  |  Books: {vector_db.index.ntotal} docs  |  Web: {web_db.index.ntotal if web_db else 0} docs")
     print("=" * 70)
     
     return True
@@ -214,15 +231,27 @@ def ask_question():
         
         print(f"💭 Generating answer...")
         
-        # Get enhanced answer with validation and personalization
+        # Get enhanced answer with hybrid validation and personalization
         response = rag_system.answer_question(
             question=question,
             vector_db=vector_db,
             top_k=config.get('top_k', 3),
             user_profile=user_profile,
             validation_top_k=5,
-            dominant_dosha=dominant_dosha
+            dominant_dosha=dominant_dosha,
+            web_db=web_db  # Pass web knowledge index for hybrid retrieval
         )
+
+        # Handle domain-blocked questions
+        if response.get('blocked'):
+            return jsonify({
+                "success": False,
+                "blocked": True,
+                "answer": response['answer'],
+                "block_reason": response.get('block_reason', ''),
+                "citations": [],
+                "validation": {}
+            }), 200
         
         # Format citations with validation info
         citations = []
@@ -406,18 +435,22 @@ def get_user_profile(user_id):
 def get_stats():
     """Get system statistics"""
     try:
-        stats = vector_db.get_stats() if vector_db else {}
+        book_stats = vector_db.get_stats() if vector_db else {}
+        web_stats  = web_db.get_stats()   if web_db   else {}
         
         return jsonify({
             "success": True,
             "stats": {
-                "total_documents": stats.get('total_documents', 0),
-                "embedding_dimension": stats.get('embedding_dimension', 0),
-                "document_types": stats.get('document_types', {}),
+                "total_book_documents": book_stats.get('total_documents', 0),
+                "total_web_documents":  web_stats.get('total_documents', 0),
+                "embedding_dimension":  book_stats.get('embedding_dimension', 0),
+                "document_types":       book_stats.get('document_types', {}),
                 "model": config.get('llm_model', 'Unknown') if config else 'Unknown',
                 "features": {
-                    "validation": True,
-                    "personalization": True
+                    "validation":     True,
+                    "personalization": True,
+                    "web_knowledge":  web_db is not None,
+                    "domain_filter":  True
                 }
             }
         })

@@ -15,6 +15,13 @@ from validation_engine import ValidationEngine
 from personalization_engine import PersonalizationEngine
 from translation_service import TranslationService
 
+# Import domain filter for Ayurveda-only question validation
+try:
+    from web_scraper.domain_filter import is_ayurvedic_question, get_rejection_message
+    _DOMAIN_FILTER_AVAILABLE = True
+except ImportError:
+    _DOMAIN_FILTER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -952,10 +959,37 @@ Related Question: {question}
         top_k: int = 5,
         user_profile: Optional[Dict[str, Any]] = None,
         validation_top_k: int = 5,
-        dominant_dosha: Optional[str] = None
+        dominant_dosha: Optional[str] = None,
+        web_db=None  # Optional separate FAISS index for web knowledge
     ) -> Dict[str, Any]:
-        """Answer question with validation, personalization, and translation"""
+        """Answer question with hybrid retrieval (books + web), validation, personalization, and translation"""
         logger.info(f"Processing question: {question[:50]}...")
+
+        # === DOMAIN FILTER: Block non-Ayurvedic questions ===
+        if _DOMAIN_FILTER_AVAILABLE:
+            is_ayurvedic, reason = is_ayurvedic_question(question)
+            if not is_ayurvedic:
+                print(f"🚫 Domain filter blocked: {question[:60]}... | Reason: {reason}")
+                return {
+                    "answer": get_rejection_message(),
+                    "answer_english": get_rejection_message(),
+                    "base_answer": "",
+                    "original_question": question,
+                    "translated_question": None,
+                    "detected_language": "en",
+                    "is_romanized": False,
+                    "citations": [],
+                    "sources": [],
+                    "all_sources": [],
+                    "num_sources": 0,
+                    "personalized": False,
+                    "detected_dosha": "General",
+                    "personalized_tips": "",
+                    "validation": {},
+                    "user_info": {},
+                    "blocked": True,
+                    "block_reason": reason
+                }
 
         # === ANSWER CACHE: same question + same dosha always returns same answer ===
         import copy as _copy
@@ -984,11 +1018,10 @@ Related Question: {question}
                 question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
                 print(f"🔄 Translated question: {question[:100]}...")
         
-        # Retrieve documents with similarity scores (prefer book sources)
-        # Note: Always search in English since database is in English
-        print("🔍 Retrieving relevant sources...")
-        # Build a targeted search query — if asking about benefits/uses, add context
-        # so the vector search finds health-content chunks rather than book index pages
+        # === HYBRID RETRIEVAL: Books + Web ===
+        print("🔍 Retrieving relevant sources (Books + Web)...")
+
+        # Build an enhanced search query for better retrieval
         search_query = question
         benefit_signals = [
             'benefit', 'use', 'good for', 'help', 'treat', 'property',
@@ -997,24 +1030,46 @@ Related Question: {question}
         if any(w in question.lower() for w in benefit_signals):
             search_query = question + " health benefits medicinal properties"
             print(f"🎯 Enhanced search query: {search_query[:120]}...")
-        retrieved_docs = vector_db.search(search_query, top_k=validation_top_k, prefer_books=True)
-        
-        # Ensure we have book sources for better citations
+
+        # Step 1: Retrieve from BOOK FAISS (existing)
+        book_retrieved = vector_db.search(search_query, top_k=validation_top_k, prefer_books=True)
+        print(f"   📚 Books: {len(book_retrieved)} docs retrieved")
+
+        # Step 2: Retrieve from WEB FAISS (new — optional)
+        web_retrieved = []
+        if web_db is not None:
+            try:
+                web_retrieved = web_db.search(search_query, top_k=3, prefer_books=False)
+                # Tag web docs clearly
+                for doc in web_retrieved:
+                    doc['type'] = 'web'
+                print(f"   🌐 Web: {len(web_retrieved)} docs retrieved")
+            except Exception as e:
+                print(f"   ⚠️ Web retrieval failed: {e}")
+                web_retrieved = []
+
+        # Step 3: Merge — books first (higher authority), then web
+        retrieved_docs = book_retrieved + web_retrieved
+
+        # Separate by type for context building
         book_docs = [d for d in retrieved_docs if d.get("type") == "book"]
-        qa_docs = [d for d in retrieved_docs if d.get("type") == "qa"]
-        
+        web_docs  = [d for d in retrieved_docs if d.get("type") == "web"]
+        qa_docs   = [d for d in retrieved_docs if d.get("type") == "qa"]
+
         # Add similarity percentages
         for doc in retrieved_docs:
             if 'similarity' in doc:
                 doc['similarity_percentage'] = round(doc['similarity'] * 100, 1)
-        
-        # Prefer book sources for context, but include QA if relevant
+
+        # Build context: books take priority, append web sources as supplementary
         if book_docs:
             top_context_docs = book_docs[:top_k]
-            print(f"📚 Using {len(top_context_docs)} book sources")
+            # Append up to 2 web sources for richer context on complex questions
+            top_context_docs = top_context_docs + web_docs[:2]
+            print(f"📚 Context: {len(book_docs[:top_k])} book + {len(web_docs[:2])} web sources")
         else:
-            top_context_docs = retrieved_docs[:top_k]
-            print(f"⚠️  No book sources found, using QA entries")
+            top_context_docs = (web_docs + qa_docs)[:top_k]
+            print(f"⚠️  No book sources — using {len(web_docs)} web + {len(qa_docs)} QA entries")
         
         # Token budget — 150 tokens is enough for 2-3 clear sentences (Feb 23 approach)
         dynamic_tokens = 150
@@ -1387,28 +1442,35 @@ Related Question: {question}
             print(f"🧬 Detected dosha from question: {detected_dosha}")
         personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha, original_question=original_question)
         
-        # Format response with similarity percentages
+        # Format response with similarity percentages — include web source URLs
         formatted_citations = []
         for doc in top_context_docs:
             meta = doc.get("metadata", {})
             doc_type = doc.get("type", "unknown")
-            
+
             citation = {
                 "source": doc.get("source", "Unknown"),
                 "type": doc_type,
                 "similarity_percentage": doc.get("similarity_percentage", 0.0),
                 "text_preview": doc.get("text", "")[:100] + "..."
             }
-            
-            # Add type-specific fields
+
             if doc_type == "book":
                 citation["chapter"] = meta.get("chapter", "N/A")
                 citation["paragraph"] = meta.get("paragraph", "N/A")
+            elif doc_type == "web":
+                # Web source — expose URL and authority for frontend display
+                citation["url"] = doc.get("url", meta.get("url", ""))
+                citation["authority"] = doc.get("authority", meta.get("authority", 0.80))
+                citation["formatted"] = (
+                    f"{doc.get('source', 'Web Source')} "
+                    f"({doc.get('similarity_percentage', 0.0)}% match)"
+                )
             else:
                 # QA entry
                 citation["qa_id"] = meta.get("question_id", "N/A")
                 citation["related_question"] = meta.get("question", "N/A")
-            
+
             formatted_citations.append(citation)
         
         # === ADD TERM CLARIFICATION for romanized Singlish ===
