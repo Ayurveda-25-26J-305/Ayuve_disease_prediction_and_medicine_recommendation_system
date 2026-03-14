@@ -26,71 +26,82 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 TRUSTED_SOURCES = [
     {
-        "name": "WisdomLib - Ayurveda",
-        "base_url": "https://www.wisdomlib.org",
+        "name": "National Ayurvedic Medical Association",
         "urls": [
-            "https://www.wisdomlib.org/ayurveda",
-            "https://www.wisdomlib.org/definition/vata",
-            "https://www.wisdomlib.org/definition/pitta",
-            "https://www.wisdomlib.org/definition/kapha",
-            "https://www.wisdomlib.org/definition/tridosha",
-            "https://www.wisdomlib.org/definition/triphala",
-            "https://www.wisdomlib.org/definition/ashwagandha",
-            "https://www.wisdomlib.org/definition/brahmi",
-            "https://www.wisdomlib.org/definition/panchakarma",
-            "https://www.wisdomlib.org/definition/prakriti",
-            "https://www.wisdomlib.org/definition/agni",
-            "https://www.wisdomlib.org/definition/rasayana",
+            "https://www.ayurvedanama.org/what-is-ayurveda",
+            "https://www.ayurvedanama.org/about-ayurveda",
+        ],
+        "authority": 0.90,
+        "type": "web"
+    },
+    {
+        "name": "Banyan Botanicals - Ayurveda",
+        "urls": [
+            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/",
+        ],
+        "authority": 0.80,
+        "type": "web"
+    },
+    {
+        "name": "Kerala Ayurveda - Herbs",
+        "urls": [
+            "https://www.keralaayurveda.biz/blog/ashwagandha",
+            "https://www.keralaayurveda.biz/blog/brahmi",
+            "https://www.keralaayurveda.biz/blog/triphala",
+            "https://www.keralaayurveda.biz/blog/neem",
+            "https://www.keralaayurveda.biz/blog/turmeric",
+            "https://www.keralaayurveda.biz/blog/ginger",
+            "https://www.keralaayurveda.biz/blog/tulsi",
+            "https://www.keralaayurveda.biz/blog/vata-dosha",
+            "https://www.keralaayurveda.biz/blog/pitta-dosha",
+            "https://www.keralaayurveda.biz/blog/kapha-dosha",
+        ],
+        "authority": 0.82,
+        "type": "web"
+    },
+    {
+        "name": "Ayur Times - Ayurvedic Herbs",
+        "urls": [
+            "https://www.ayurtimes.com/ashwagandha/",
+            "https://www.ayurtimes.com/brahmi-bacopa-monnieri/",
+            "https://www.ayurtimes.com/triphala/",
+            "https://www.ayurtimes.com/turmeric-curcuma-longa/",
+            "https://www.ayurtimes.com/neem-azadirachta-indica/",
+            "https://www.ayurtimes.com/tulsi-ocimum-sanctum/",
+            "https://www.ayurtimes.com/ginger-zingiber-officinale/",
+            "https://www.ayurtimes.com/shatavari/",
+            "https://www.ayurtimes.com/amla-indian-gooseberry/",
+            "https://www.ayurtimes.com/vata-dosha/",
+            "https://www.ayurtimes.com/pitta-dosha/",
+            "https://www.ayurtimes.com/kapha-dosha/",
+            "https://www.ayurtimes.com/panchakarma/",
+            "https://www.ayurtimes.com/prakriti-body-type/",
+        ],
+        "authority": 0.80,
+        "type": "web"
+    },
+    {
+        "name": "Himalaya Wellness - Herbs",
+        "urls": [
+            "https://www.himalayawellness.com/ingredients/ashwagandha.htm",
+            "https://www.himalayawellness.com/ingredients/brahmi.htm",
+            "https://www.himalayawellness.com/ingredients/neem.htm",
+            "https://www.himalayawellness.com/ingredients/turmeric.htm",
+            "https://www.himalayawellness.com/ingredients/triphala.htm",
         ],
         "authority": 0.85,
         "type": "web"
     },
     {
-        "name": "Ayurveda Journal (AYU)",
-        "base_url": "https://www.ayujournal.org",
+        "name": "Healthline - Ayurvedic Herbs",
         "urls": [
-            "https://www.ayujournal.org/text.asp?2011/32/2/173/92554",  # Tridosha concept
+            "https://www.healthline.com/nutrition/ashwagandha",
+            "https://www.healthline.com/nutrition/triphala",
+            "https://www.healthline.com/nutrition/turmeric-and-black-pepper",
+            "https://www.healthline.com/nutrition/holy-basil",
+            "https://www.healthline.com/health/ayurvedic-treatment-for-diabetes",
         ],
-        "authority": 0.90,
-        "type": "web"
-    },
-    {
-        "name": "National Ayurvedic Medical Association",
-        "base_url": "https://www.ayurvedanama.org",
-        "urls": [
-            "https://www.ayurvedanama.org/what-is-ayurveda",
-            "https://www.ayurvedanama.org/principles-of-ayurveda",
-        ],
-        "authority": 0.90,
-        "type": "web"
-    },
-    {
-        "name": "Chopra Center - Ayurveda",
-        "base_url": "https://chopra.com",
-        "urls": [
-            "https://chopra.com/articles/what-is-ayurveda",
-            "https://chopra.com/articles/vata-dosha",
-            "https://chopra.com/articles/pitta-dosha",
-            "https://chopra.com/articles/kapha-dosha",
-            "https://chopra.com/articles/the-three-doshas",
-            "https://chopra.com/articles/triphala-the-ayurvedic-wonder-herb",
-            "https://chopra.com/articles/ashwagandha-herb-of-the-season",
-        ],
-        "authority": 0.80,
-        "type": "web"
-    },
-    {
-        "name": "Banyan Botanicals - Ayurveda",
-        "base_url": "https://www.banyanbotanicals.com",
-        "urls": [
-            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/",
-            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/vata-dosha/",
-            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/pitta-dosha/",
-            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/kapha-dosha/",
-            "https://www.banyanbotanicals.com/info/ayurvedic-living/learning-ayurveda/the-three-doshas/",
-            "https://www.banyanbotanicals.com/info/herbal-encyclopedia/",
-        ],
-        "authority": 0.80,
+        "authority": 0.75,
         "type": "web"
     },
 ]
