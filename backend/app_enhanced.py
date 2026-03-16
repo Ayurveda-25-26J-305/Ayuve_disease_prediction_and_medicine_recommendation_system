@@ -117,31 +117,47 @@ def initialize_system():
 
 def format_citation(source_doc, validation_info=None):
     """
-    Format citation for frontend display with validation info
-    Handles both book sources and QA dataset entries
-    
-    Args:
-        source_doc: Source document dictionary
-        validation_info: Optional validation info for this source
+    Format citation for frontend display with validation info.
+    Handles book sources, web sources, and QA dataset entries.
     """
     metadata = source_doc.get("metadata", {})
     source_name = source_doc.get("source", "Unknown")
     doc_type = source_doc.get("type", "unknown")
     similarity_percentage = source_doc.get("similarity_percentage", 0.0)
-    
+
     citation = {
         "source": source_name,
         "type": doc_type,
         "similarity_percentage": similarity_percentage
     }
-    
-    # Add type-specific fields
+
     if doc_type == "book":
         chapter = metadata.get("chapter", "N/A")
         paragraph = metadata.get("paragraph", metadata.get("verse", "N/A"))
         citation["chapter"] = str(chapter)
         citation["paragraph"] = str(paragraph)
-        citation["formatted"] = f"{source_name} – Chapter {chapter} – Verse/Paragraph {paragraph} ({similarity_percentage}% match)"
+        citation["formatted"] = (
+            f"{source_name} – Chapter {chapter} – "
+            f"Verse/Paragraph {paragraph} ({similarity_percentage}% match)"
+        )
+
+    elif doc_type == "web":
+        # Web / curated source — expose URL for clickable links
+        url = (source_doc.get("url", "")
+               or metadata.get("url", "")
+               or metadata.get("source_url", ""))
+        authority = source_doc.get("authority", metadata.get("authority", 0.80))
+        citation["url"] = url
+        citation["authority"] = round(authority, 2)
+        citation["formatted"] = (
+            f"{source_name} ({similarity_percentage}% match)"
+        )
+        if url:
+            citation["formatted_with_link"] = (
+                f'<a href="{url}" target="_blank" rel="noopener">'
+                f'{source_name}</a> ({similarity_percentage}% match)'
+            )
+
     else:
         # QA dataset entry
         qa_id = metadata.get("question_id", "N/A")
@@ -149,12 +165,12 @@ def format_citation(source_doc, validation_info=None):
         citation["qa_id"] = str(qa_id)
         citation["related_question"] = related_question
         citation["formatted"] = f"{source_name} – Q&A #{qa_id} ({similarity_percentage}% match)"
-    
+
     # Add validation info if provided
     if validation_info:
         citation["agreement"] = validation_info.get("agreement_level", "unknown")
         citation["similarity"] = validation_info.get("similarity", 0.0)
-    
+
     return citation
 
 
