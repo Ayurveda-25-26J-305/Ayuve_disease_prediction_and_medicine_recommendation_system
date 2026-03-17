@@ -675,6 +675,63 @@ Related Question: {question}
 
         return dominant
 
+    def _extract_followup_context(self, question: str) -> tuple[str, str]:
+        """
+        Split frontend follow-up marker:
+        "What about side effects? (regarding: Turmeric benefits)"
+        -> ("What about side effects?", "Turmeric benefits")
+        """
+        import re
+
+        if not question:
+            return "", ""
+
+        match = re.search(r'\s*\(regarding:\s*(.*?)\)\s*$', question, flags=re.IGNORECASE)
+        if not match:
+            return question.strip(), ""
+
+        main_q = re.sub(r'\s*\(regarding:.*?\)\s*$', '', question, flags=re.IGNORECASE).strip()
+        regarding = (match.group(1) or '').strip()
+        return main_q, regarding
+
+    def _classify_question_intent(self, question: str) -> str:
+        """Classify query intent so follow-ups get intent-specific answers."""
+        import re
+
+        q = (question or '').lower()
+        patterns = [
+            ('side_effects', r'\b(side\s*effects?|adverse|harm|danger|risk|unsafe|caution|warning|contraindication)\b'),
+            ('dosage', r'\b(dosage|dose|how much|how many|how often|how long|amount|quantity|when to take|how to take)\b'),
+            ('combination', r'\b(combine|combined|together|with|mix|can i take .* with|interaction)\b'),
+            ('treatment', r'\b(treat|treatment|manage|relief|what to do|i have|suffering|symptom|fever|cold|cough|pain|infection|remedy)\b'),
+            ('benefits', r'\b(benefit|benefits|uses|properties|guna|good for|helps|advantages)\b'),
+            ('definition', r'\b(what is|what are|meaning|define|explain|describe)\b'),
+        ]
+
+        for intent, pattern in patterns:
+            if re.search(pattern, q, flags=re.IGNORECASE):
+                return intent
+        return 'general'
+
+    def _build_search_query(self, question: str, regarding_context: str, intent: str) -> str:
+        """Build an intent-aware retrieval query from current + follow-up context."""
+        base = question.strip()
+        if regarding_context:
+            base = f"{base} {regarding_context}".strip()
+
+        intent_expansions = {
+            'benefits': 'health benefits medicinal properties ayurveda evidence',
+            'side_effects': 'side effects safety precautions contraindications toxicity interactions',
+            'dosage': 'dosage amount frequency how to take with food timing ayurveda',
+            'combination': 'combination with interactions synergy bioavailability compatibility',
+            'treatment': 'symptoms causes ayurvedic treatment home remedies diet lifestyle',
+            'definition': 'definition explanation ayurvedic concept basics',
+            'general': 'ayurvedic guidance practical advice',
+        }
+
+        extra = intent_expansions.get(intent, intent_expansions['general'])
+        return f"{base} {extra}".strip()
+
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str, original_question: str = '') -> str:
         """
         Generate 3 dosha-specific Ayurvedic tips using question-type-aware templates.
@@ -706,6 +763,7 @@ Related Question: {question}
         _is_dosage   = bool(_re.search(r'\b(how much|how many|how often|how long|dosage|dose|quantity|amount)\b', _q))
         _is_sideeff  = bool(_re.search(r'\b(side effect|harm|danger|safe|risk|caution|warning)\b', _q))
         _is_howto    = bool(_re.search(r'\b(how to use|how to take|how to consume|how to prepare)\b', _q))
+        _is_treatment = bool(_re.search(r'\b(treat|treatment|manage|what to do|i have|suffering|symptom|fever|cold|cough|pain|infection|remedy)\b', _q))
 
         # Detect if question is about a dosha/concept rather than a specific herb
         _is_concept  = bool(_re.search(r'\b(what is|what are|explain|describe)\b', _q) and
@@ -766,6 +824,7 @@ Related Question: {question}
             'mean', 'general', 'use', 'using', 'used', 'consume', 'consumption',
             'daily', 'morning', 'evening', 'right', 'proper', 'best',
             'health', 'body', 'blood', 'sugar', 'water', 'milk', 'intake',
+            'have', 'having',
             # Multi-word question fragments that slip through
             'improve', 'digestion', 'digestions', 'diagestion', 'function',
             'sleep', 'stress', 'energy', 'weight', 'immunity', 'inflammation',
@@ -806,6 +865,29 @@ Related Question: {question}
                 "Eat fresh, seasonal, and lightly cooked foods every day for good health in Ayurveda.",
                 "Regular sleep, daily exercise, and consistent meal times form the foundation of Ayurvedic wellbeing.",
                 "Consult an Ayurvedic practitioner to find the right diet and herbs for your body type.",
+            ],
+        }
+
+        treatment_tips = {
+            'Vata': [
+                "For Vata-type symptoms, keep warm, hydrated, and rested; avoid cold food and irregular routines.",
+                "Use light warm foods like rice gruel, thin mung soup, and ginger-tulsi tea during recovery.",
+                "If fever or pain persists, consult a qualified clinician promptly for personalized care.",
+            ],
+            'Pitta': [
+                "For Pitta-type symptoms, use cooling and light foods while avoiding spicy, fried, and sour meals.",
+                "Hydrate well with warm water or room-temperature herbal fluids and prioritize rest.",
+                "If symptoms are intense or persistent, seek professional medical care without delay.",
+            ],
+            'Kapha': [
+                "For Kapha-type symptoms, prefer warm, light, and mildly spiced foods to reduce heaviness and congestion.",
+                "Avoid cold dairy and heavy meals; use warm herbal drinks and gentle movement when able.",
+                "Consult a healthcare professional if symptoms worsen or do not improve within a short time.",
+            ],
+            'General': [
+                "During illness, prioritize hydration, rest, and easy-to-digest warm foods.",
+                "Avoid heavy, oily, and very cold foods until digestion and energy recover.",
+                "Seek timely medical care for high fever, breathing difficulty, dehydration, or persistent symptoms.",
             ],
         }
 
@@ -930,6 +1012,11 @@ Related Question: {question}
 
         # If no valid herb/topic was found (concept question like "what is pitta?"),
         # skip herb tips and use general dosha lifestyle advice
+        if _is_treatment:
+            tips = treatment_tips[dosha_key]
+            print(f"✓ Treatment tips generated for {dosha_key}")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
+
         if _is_bad_topic or _is_concept or _is_which_herbs:
             tips = concept_tips[dosha_key]
             print(f"✓ Concept tips generated for {dosha_key} (no herb topic found)")
@@ -965,9 +1052,14 @@ Related Question: {question}
         """Answer question with hybrid retrieval (books + web), validation, personalization, and translation"""
         logger.info(f"Processing question: {question[:50]}...")
 
+        # Extract optional frontend follow-up context marker.
+        # Example: "What about side effects? (regarding: Turmeric benefits)"
+        parsed_question, regarding_context = self._extract_followup_context(question)
+        question_for_processing = parsed_question or question
+
         # === DOMAIN FILTER: Block non-Ayurvedic questions ===
         if _DOMAIN_FILTER_AVAILABLE:
-            is_ayurvedic, reason = is_ayurvedic_question(question)
+            is_ayurvedic, reason = is_ayurvedic_question(question_for_processing)
             if not is_ayurvedic:
                 print(f"🚫 Domain filter blocked: {question[:60]}... | Reason: {reason}")
                 return {
@@ -1002,34 +1094,47 @@ Related Question: {question}
         original_question = question
         detected_language = 'en'  # Default to English
         is_romanized = False  # Track if romanized Singlish
+        question_for_processing_en = question_for_processing
+        regarding_context_en = regarding_context
         
         if self.enable_translation and self.translator:
-            detected_language = self.translator.detect_language(question)
+            detected_language = self.translator.detect_language(question_for_processing)
             print(f"🌐 Detected language: {detected_language.upper()}")
             
             if detected_language in ('si', 'ta'):
                 # Check if romanized (no Sinhala Unicode chars) or native script
-                is_romanized = not self.translator._has_sinhala_chars(question)
+                is_romanized = not self.translator._has_sinhala_chars(question_for_processing)
                 
                 if is_romanized:
                     print(f"📝 Romanized input detected (e.g., 'kurudu wala guna')")
                 
                 # Translate question to English for processing
-                question = self.translator.translate_si_to_en(question, is_romanized=is_romanized)
-                print(f"🔄 Translated question: {question[:100]}...")
+                question_for_processing_en = self.translator.translate_si_to_en(
+                    question_for_processing,
+                    is_romanized=is_romanized
+                )
+                if regarding_context:
+                    regarding_context_en = self.translator.translate_si_to_en(
+                        regarding_context,
+                        is_romanized=is_romanized
+                    )
+                print(f"🔄 Translated question: {question_for_processing_en[:100]}...")
+
+        # Classify question intent after translation for robust follow-up handling.
+        combined_query_for_intent = f"{question_for_processing_en} {regarding_context_en}".strip()
+        question_intent = self._classify_question_intent(combined_query_for_intent)
+        print(f"🧭 Detected intent: {question_intent}")
         
         # === HYBRID RETRIEVAL: Books + Web ===
         print("🔍 Retrieving relevant sources (Books + Web)...")
 
-        # Build an enhanced search query for better retrieval
-        search_query = question
-        benefit_signals = [
-            'benefit', 'use', 'good for', 'help', 'treat', 'property',
-            'guna', 'effect', 'cure', 'purpose', 'health', 'medicinal'
-        ]
-        if any(w in question.lower() for w in benefit_signals):
-            search_query = question + " health benefits medicinal properties"
-            print(f"🎯 Enhanced search query: {search_query[:120]}...")
+        # Build intent-aware search query from current + follow-up context.
+        search_query = self._build_search_query(
+            question=question_for_processing_en,
+            regarding_context=regarding_context_en,
+            intent=question_intent,
+        )
+        print(f"🎯 Enhanced search query: {search_query[:120]}...")
 
         # Step 1: Retrieve from BOOK FAISS (existing)
         book_retrieved = vector_db.search(search_query, top_k=validation_top_k, prefer_books=True)
@@ -1170,7 +1275,7 @@ Related Question: {question}
 
         # Detect if question is about a known Ayurvedic concept
         import re as _re_kb
-        _q_lower = question.lower()
+        _q_lower = question_for_processing_en.lower()
         _injected_context = None
         for _concept_key, _concept_text in CONCEPT_KB.items():
             if _re_kb.search(r'\b' + _concept_key + r'\b', _q_lower):
@@ -1178,6 +1283,40 @@ Related Question: {question}
                 print(f"📖 Concept question detected: '{_concept_key}' — using curated KB context")
                 break
         # ── END CONCEPT KNOWLEDGE BASE ───────────────────────────────────────────
+
+        # ── CONDITION KNOWLEDGE BASE (general symptom questions) ────────────────
+        CONDITION_KB = {
+            'fever': {
+                'treatment': (
+                    "In Ayurveda, fever (Jvara) is managed with light, warm fluids and herbs that support digestion and immunity. "
+                    "Useful home support includes warm Tulsi-ginger tea, adequate rest, and easily digestible foods like rice gruel or thin mung soup. "
+                    "If fever is high, persistent, or associated with dehydration or breathing difficulty, seek medical care promptly in addition to Ayurvedic support."
+                )
+            },
+            'cough': {
+                'treatment': (
+                    "Ayurvedic care for cough focuses on reducing mucus and soothing irritated airways with warm, spiced liquids. "
+                    "Tulsi, dry ginger, black pepper, and honey are traditionally used in small amounts to support relief. "
+                    "Avoid cold, oily, and heavy foods during cough episodes, and seek medical evaluation if cough persists or worsens."
+                )
+            },
+            'cold': {
+                'treatment': (
+                    "For common cold, Ayurveda emphasizes warm hydration, steam inhalation, and light foods to protect Agni (digestive fire). "
+                    "Tulsi-ginger-pepper decoction and warm soups are commonly used to reduce congestion and support recovery. "
+                    "Rest well and avoid chilled foods; consult a clinician if symptoms are severe or prolonged."
+                )
+            }
+        }
+        if not _injected_context:
+            for _cond, _data in CONDITION_KB.items():
+                if _re_kb.search(r'\b' + _re_kb.escape(_cond) + r'\b', combined_query_for_intent.lower()):
+                    _cond_key = 'treatment' if question_intent in ('treatment', 'general') else question_intent
+                    _injected_context = _data.get(_cond_key) or _data.get('treatment')
+                    if _injected_context:
+                        print(f"🩺 Condition fast-path: '{_cond}'/{_cond_key}")
+                    break
+        # ── END CONDITION KNOWLEDGE BASE ───────────────────────────────────────
 
         # ── HERB KNOWLEDGE BASE ──────────────────────────────────────────────────
         # Curated 3-sentence facts for common Ayurvedic herbs — same fast-path as
@@ -1263,11 +1402,37 @@ Related Question: {question}
         # Check translated question first, then original (catches romanized Sinhala)
         import re as _re_herb_kb
         if not _injected_context:
-            for _q_check in (question.lower(), original_question.lower()):
+            for _q_check in (question_for_processing_en.lower(), regarding_context_en.lower(), original_question.lower()):
                 for _alias, _kb_key in _HERB_KB_ALIASES.items():
                     if _re_herb_kb.search(r'\b' + _re_herb_kb.escape(_alias) + r'\b', _q_check):
-                        _injected_context = HERB_KB[_kb_key]
-                        print(f"🌿 Herb KB fast-path: '{_kb_key}' — using curated facts")
+                        if question_intent == 'side_effects':
+                            _injected_context = (
+                                f"{_kb_key} is generally safe in traditional Ayurvedic amounts, but excess use can cause digestive discomfort in some people. "
+                                f"People with sensitive stomach, gallbladder disease, bleeding disorders, or those taking blood thinners should use {_kb_key.lower()} cautiously and seek professional advice. "
+                                f"To reduce side effects, start with a small dose, take it with food, and stop use if irritation or unusual symptoms appear."
+                            )
+                        elif question_intent == 'dosage':
+                            _injected_context = (
+                                f"Ayurveda usually recommends {_kb_key.lower()} in small, regular doses rather than large occasional doses. "
+                                f"A practical starting approach is low-dose daily use with food or warm water, then adjusting based on digestion and tolerance. "
+                                f"The exact dose depends on age, health conditions, and medicines, so personalized guidance from a qualified practitioner is best for long-term use."
+                            )
+                        elif question_intent == 'combination':
+                            if _kb_key == 'Turmeric' and 'pepper' in combined_query_for_intent.lower():
+                                _injected_context = (
+                                    "Turmeric is commonly combined with black pepper in Ayurveda because piperine in pepper improves curcumin absorption. "
+                                    "This combination is often used in warm milk, herbal decoctions, or food with a small amount of healthy fat like ghee. "
+                                    "Use moderate amounts and avoid high doses if you have active gastritis, are on anticoagulants, or have gallbladder problems."
+                                )
+                            else:
+                                _injected_context = (
+                                    f"{_kb_key} can often be combined with compatible Ayurvedic spices to improve absorption and therapeutic effect. "
+                                    f"Combining {_kb_key.lower()} with warm carriers such as ghee, milk, or ginger water is commonly practiced depending on constitution and condition. "
+                                    f"For safety, check medicine interactions and use practitioner guidance when combining multiple herbs long-term."
+                                )
+                        else:
+                            _injected_context = HERB_KB[_kb_key]
+                        print(f"🌿 Herb KB fast-path: '{_kb_key}' with intent '{question_intent}'")
                         break
                 if _injected_context:
                     break
@@ -1317,7 +1482,7 @@ Related Question: {question}
                 r'curry leaf|moringa|sesame|coconut|ghee)\b'
             )
             # Try translated question first; fall back to original (romanized) question
-            _herb_match = _re_ctx.search(_HERB_PATTERN, question.lower())
+            _herb_match = _re_ctx.search(_HERB_PATTERN, question_for_processing_en.lower())
             if not _herb_match:
                 _herb_match = _re_ctx.search(_HERB_PATTERN, original_question.lower())
             if _herb_match:
@@ -1332,6 +1497,7 @@ Related Question: {question}
                 'when', 'they', 'their', 'should', 'does', 'good', 'more', 'some', 'into',
                 'than', 'about', 'help', 'cause', 'ayur', 'ayurvedic', 'herb', 'body',
                 'health', 'used', 'also', 'both', 'well', 'very', 'such', 'each', 'than',
+                'regarding', 'tell', 'please', 'need', 'want', 'know', 'question',
             }
             # Benefit-action verbs — sentences with these are almost always informative
             _BENEFIT_VERBS = _re_ctx.compile(
@@ -1343,6 +1509,17 @@ Related Question: {question}
                 _re_ctx.IGNORECASE
             )
             _herb_lower = _herb_in_q.lower() if _herb_in_q else ''
+            _query_terms = set(_re_ctx.findall(r'\b[a-z]{4,}\b', combined_query_for_intent.lower())) - _stopwords
+            _intent_terms = {
+                'side_effects': {'side', 'effect', 'risk', 'harm', 'safe', 'warning', 'caution'},
+                'dosage': {'dose', 'dosage', 'amount', 'frequency', 'daily', 'take', 'timing'},
+                'combination': {'combine', 'combination', 'with', 'interaction', 'mix', 'pepper'},
+                'treatment': {'treat', 'treatment', 'symptom', 'manage', 'relief', 'fever', 'cough', 'cold'},
+                'definition': {'what', 'definition', 'meaning', 'explain'},
+                'benefits': {'benefit', 'use', 'helps', 'supports', 'improves'},
+                'general': {'ayurveda', 'health'},
+            }
+            _intent_focus = _intent_terms.get(question_intent, set())
 
             # 3. Strip metadata header lines from context so we only score real text
             _clean_ctx = _re_ctx.sub(r'\[Source \d+\]', '', context_text)
@@ -1367,6 +1544,8 @@ Related Question: {question}
                 if _BENEFIT_VERBS.search(_s):
                     _score += 2
                 _s_words = set(_re_ctx.findall(r'\b[a-z]{4,}\b', _s_lower)) - _stopwords
+                _score += len(_s_words & _query_terms) * 2
+                _score += len(_s_words & _intent_focus)
                 _score += len(_s_words & ({_herb_lower} if _herb_lower else set()))
                 if _score > 0:
                     _scored_sents.append((_score, _s))
@@ -1397,7 +1576,11 @@ Related Question: {question}
                 base_answer = '\n'.join(f'\u2022 {s}' for s in _polished)
                 print(f"✅ Context extraction answer: {base_answer[:120]}...")
             else:
-                base_answer = "No specific information was found for this question in the Ayurvedic sources."
+                base_answer = (
+                    "• I could not find a strong direct match in the indexed Ayurvedic sources for this exact wording.\n"
+                    "• Please rephrase with the main symptom, herb, or condition (for example: side effects, dosage, or treatment goal).\n"
+                    "• If symptoms are severe or persistent, seek care from a qualified medical professional."
+                )
                 print("⚠️  No relevant sentences found in context.")
         
         # Validate
@@ -1419,7 +1602,7 @@ Related Question: {question}
             final_answer = self.personalizer.personalize_answer(
                 base_answer=base_answer,
                 user_profile=user_profile,
-                question=question
+                question=question_for_processing_en
             )
             is_personalized = True
 
@@ -1438,9 +1621,14 @@ Related Question: {question}
             detected_dosha = user_profile['dominant_dosha'].capitalize()
             print(f"🧬 Using profile dosha: {detected_dosha}")
         else:
-            detected_dosha = self._detect_dosha_from_question(question, base_answer)
+            detected_dosha = self._detect_dosha_from_question(question_for_processing_en, base_answer)
             print(f"🧬 Detected dosha from question: {detected_dosha}")
-        personalized_tips = self._generate_personalized_tips(question, base_answer, detected_dosha, original_question=original_question)
+        personalized_tips = self._generate_personalized_tips(
+            question_for_processing_en,
+            base_answer,
+            detected_dosha,
+            original_question=original_question
+        )
         
         # Format response with similarity percentages — include web source URLs
         formatted_citations = []
@@ -1553,7 +1741,7 @@ Related Question: {question}
             "answer_english": final_answer,  # Always keep English version
             "base_answer": base_answer,
             "original_question": original_question,
-            "translated_question": question if detected_language == 'si' else None,
+            "translated_question": question_for_processing_en if detected_language == 'si' else None,
             "detected_language": detected_language,
             "is_romanized": is_romanized if detected_language == 'si' else False,
             "citations": formatted_citations,

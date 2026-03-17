@@ -265,7 +265,13 @@ export default function Home() {
     /^(what about|tell me more|more about|how does it|how does that|and what|explain more|why is that|is it good for|what else|any side effects|side effects of|dosage of|how much|when to take|how to use it|how to take it|what are its|is it safe|can i|how often)/i;
   const PRONOUN_ONLY_RE = /^(it|that|this|those|they|them|its)\b/i;
 
-  const buildQuestion = (q: string): string => {
+  const buildQuestion = (q: string, explicitContext?: string): string => {
+    // If caller provides explicit parent context (follow-up chip click), always attach it.
+    if (explicitContext && explicitContext.trim()) {
+      if (/\(regarding:.*\)$/i.test(q.trim())) return q;
+      return `${q} (regarding: ${explicitContext.trim()})`;
+    }
+
     if (!lastQuestion) return q;
     const words = q.trim().split(/\s+/);
     const isFollowUp =
@@ -426,9 +432,9 @@ export default function Home() {
     setTimeout(() => win.print(), 500);
   };
 
-  const askQuestion = async (question: string) => {
+  const askQuestion = async (question: string, explicitContext?: string) => {
     if (!question.trim()) return;
-    const finalQuestion = buildQuestion(question);
+    const finalQuestion = buildQuestion(question, explicitContext);
     setLastQuestion(question);
     setShowWelcome(false);
     const qId = nextId();
@@ -1112,7 +1118,7 @@ export default function Home() {
               onShare={() => shareAnswer(msg, msg.id)}
               isCopied={copiedId === msg.id}
               isShared={sharedId === msg.id}
-              onFollowUp={(q) => askQuestion(q)}
+              onFollowUp={(q, context) => askQuestion(q, context)}
             />
           ))}
 
@@ -1223,7 +1229,7 @@ function MessageComponent({
   onShare: () => void;
   isCopied: boolean;
   isShared: boolean;
-  onFollowUp: (q: string) => void;
+  onFollowUp: (q: string, context?: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [delHov, setDelHov] = useState(false);
@@ -1266,6 +1272,14 @@ function MessageComponent({
             : "",
         ].join("")
       : message.content;
+
+  const getParentQuestion = (): string => {
+    const idx = allMessages.findIndex((m) => m.id === message.id);
+    if (idx > 0 && allMessages[idx - 1]?.type === "question") {
+      return allMessages[idx - 1].content;
+    }
+    return "";
+  };
 
   const CopyIco = () => (
     <svg
@@ -1818,7 +1832,7 @@ function MessageComponent({
                   {message.followUps.map((q, i) => (
                     <button
                       key={i}
-                      onClick={() => onFollowUp(q)}
+                      onClick={() => onFollowUp(q, getParentQuestion())}
                       style={{
                         padding: "5px 12px",
                         borderRadius: "16px",
