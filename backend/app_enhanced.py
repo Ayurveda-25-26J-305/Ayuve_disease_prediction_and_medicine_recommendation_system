@@ -453,9 +453,15 @@ def get_stats():
     try:
         book_stats = vector_db.get_stats() if vector_db else {}
         web_stats  = web_db.get_stats()   if web_db   else {}
-        
+
         return jsonify({
             "success": True,
+            # Flat fields — used by Cell 9 and frontend
+            "book_documents":  book_stats.get('total_documents', 0),
+            "web_documents":   web_stats.get('total_documents', 0),
+            "web_knowledge":   web_db is not None,
+            "domain_filter":   True,
+            # Detailed nested stats
             "stats": {
                 "total_book_documents": book_stats.get('total_documents', 0),
                 "total_web_documents":  web_stats.get('total_documents', 0),
@@ -463,10 +469,11 @@ def get_stats():
                 "document_types":       book_stats.get('document_types', {}),
                 "model": config.get('llm_model', 'Unknown') if config else 'Unknown',
                 "features": {
-                    "validation":     True,
+                    "validation":      True,
                     "personalization": True,
-                    "web_knowledge":  web_db is not None,
-                    "domain_filter":  True
+                    "web_knowledge":   web_db is not None,
+                    "domain_filter":   True,
+                    "translation":     True,
                 }
             }
         })
