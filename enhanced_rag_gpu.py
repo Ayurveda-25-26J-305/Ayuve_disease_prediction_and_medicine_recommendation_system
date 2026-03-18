@@ -736,6 +736,107 @@ Related Question: {question}
         extra = intent_expansions.get(intent, intent_expansions['general'])
         return f"{base} {extra}".strip()
 
+    def _build_tip_evidence_context(self, sources, max_sources: int = 3, max_chars_per_source: int = 220) -> str:
+        """Build compact evidence context for dynamic tip generation."""
+        snippets = []
+        for i, src in enumerate((sources or [])[:max_sources], 1):
+            txt = (src.get('text') or '').strip()
+            if not txt:
+                continue
+            txt = txt.replace('\n', ' ').strip()
+            snippets.append(f"[{i}] {txt[:max_chars_per_source]}")
+        return '\n'.join(snippets) if snippets else "No explicit evidence snippets available."
+
+    def _normalize_dynamic_tips(self, raw_text: str) -> str:
+        """Normalize LLM tip output to exactly 3 numbered lines."""
+        import re
+
+        if not raw_text or not raw_text.strip():
+            return ''
+
+        text = raw_text.strip()
+        for token in ['<|system|>', '<|user|>', '<|assistant|>', '<|end|>']:
+            text = text.replace(token, '')
+        text = text.strip()
+
+        tips = []
+        for line in text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            line = re.sub(r'^\s*(?:\d+\s*[\).:-]?|[-•\*])\s*', '', line).strip()
+            if len(line) < 20:
+                continue
+            tips.append(line)
+
+        if not tips:
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            for s in sentences:
+                s = s.strip()
+                if len(s) >= 20:
+                    tips.append(s)
+
+        cleaned = []
+        for tip in tips:
+            tip = re.sub(r'\s+', ' ', tip).strip(' .;:-')
+            if not tip:
+                continue
+            tip = tip[0].upper() + tip[1:]
+            if tip[-1] not in '.!?':
+                tip += '.'
+            cleaned.append(tip)
+            if len(cleaned) >= 3:
+                break
+
+        if len(cleaned) < 2:
+            return ''
+
+        return '\n'.join(f"{i+1}. {t}" for i, t in enumerate(cleaned[:3]))
+
+    def _generate_dynamic_personalized_tips(
+        self,
+        question: str,
+        base_answer: str,
+        dosha: str,
+        sources,
+        original_question: str = ''
+    ) -> str:
+        """
+        Generate dynamic tips from question + dosha + retrieved evidence.
+        Returns empty string on failure so caller can fallback to templates.
+        """
+        try:
+            if not getattr(self, 'llm', None):
+                return ''
+
+            intent = self._classify_question_intent(question)
+            evidence_ctx = self._build_tip_evidence_context(sources)
+
+            prompt = f"""<|system|>You are an Ayurvedic clinical assistant generating safe personalized tips. Use the question, dosha, and evidence snippets. Give practical tips aligned with the question intent. Do not invent exact drug doses unless directly supported by evidence. If red-flag symptoms are possible, include one short safety tip. Return exactly 3 numbered tips (1., 2., 3.) in English only.<|end|>
+<|user|>
+Question: {question}
+Original User Query: {original_question}
+Detected Dosha: {dosha}
+Question Intent: {intent}
+
+Base Answer:
+{base_answer[:800]}
+
+Evidence Snippets:
+{evidence_ctx}
+
+Generate exactly 3 concise personalized tips now.<|end|>
+<|assistant|>"""
+
+            raw = self.llm.generate(prompt, max_new_tokens=220)
+            normalized = self._normalize_dynamic_tips(raw)
+            if normalized:
+                print("✨ Dynamic personalized tips generated")
+            return normalized
+        except Exception as e:
+            print(f"⚠️ Dynamic tips generation failed: {e}")
+            return ''
+
     def _generate_personalized_tips(self, question: str, answer: str, dosha: str, original_question: str = '') -> str:
         """
         Generate 3 dosha-specific Ayurvedic tips using question-type-aware templates.
@@ -747,15 +848,19 @@ Related Question: {question}
         # --- Step 1: Extract a clean topic keyword ---
         _source_q = question
 
-        # Map romanized Sinhala herb names via the dictionary first
-        try:
-            from translation_service import SINHALA_TO_ENGLISH_DICT
-            for sinhala_key, english_val in SINHALA_TO_ENGLISH_DICT.items():
-                if sinhala_key.lower() in original_question.lower():
-                    _source_q = f"what are the benefits of {english_val}"
-                    break
-        except Exception:
-            pass
+        # Only map known herb aliases from romanized Sinhala to avoid accidental
+        # substring hits (e.g., "me" in "medicine").
+        _romanized_herb_aliases = {
+            'kurudu': 'cinnamon', 'kaha': 'turmeric', 'inguru': 'ginger',
+            'kohomba': 'neem', 'kothamalli': 'coriander', 'kottamalli': 'coriander',
+            'nelli': 'gooseberry', 'karavila': 'bitter gourd', 'karawila': 'bitter gourd',
+            'karela': 'bitter gourd', 'nilkatarodumal': 'bitter gourd', 'nilkatarodumala': 'bitter gourd',
+        }
+        _orig_words = set(_re.findall(r'\b[a-zA-Z]{3,}\b', original_question.lower()))
+        for _alias, _eng in _romanized_herb_aliases.items():
+            if _alias in _orig_words:
+                _source_q = f"what are the benefits of {_eng}"
+                break
 
         # Step 1: Extract topic — detect question type first (before stripping prefix)
         _q = _source_q.lower()
@@ -767,7 +872,9 @@ Related Question: {question}
         _is_dosage   = bool(_re.search(r'\b(how much|how many|how often|how long|dosage|dose|quantity|amount)\b', _q))
         _is_sideeff  = bool(_re.search(r'\b(side effect|harm|danger|safe|risk|caution|warning)\b', _q))
         _is_howto    = bool(_re.search(r'\b(how to use|how to take|how to consume|how to prepare)\b', _q))
-        _is_treatment = bool(_re.search(r'\b(treat|treatment|manage|what to do|i have|suffering|symptom|fever|cold|cough|pain|infection|remedy)\b', _q))
+        _is_treatment = bool(_re.search(r'\b(treat|treatments?|manage|what to do|i have|suffering|symptom|fever|cold|cough|pain|infection|remedy)\b', _q))
+        _is_diet_plan = bool(_re.search(r'\b(diet|meal plan|food plan|what to eat|foods to avoid|nutrition|diabetes diet)\b', _q))
+        _is_recommendation = bool(_re.search(r'\b(recommend|recommendation|which medicine|what medicine|best medicine|tablet|syrup|drug)\b', _q))
 
         # Detect if question is about a dosha/concept rather than a specific herb
         _is_concept  = bool(_re.search(r'\b(what is|what are|explain|describe)\b', _q) and
@@ -895,6 +1002,120 @@ Related Question: {question}
             ],
         }
 
+        condition_treatment_tips = {
+            'fever': {
+                'Vata': [
+                    "For Vata-type fever, prioritize warm fluids, rest, and light easy-to-digest meals such as rice gruel and thin soups.",
+                    "Avoid cold drinks, fasting for long periods, and irregular sleep while fever is present.",
+                    "If fever stays high, persists more than 2-3 days, or causes weakness/dehydration, seek medical care promptly.",
+                ],
+                'Pitta': [
+                    "For Pitta-type fever, use cooling hydration and avoid spicy, sour, and fried foods until recovery.",
+                    "Prefer light meals and calm rest; keep the body cool without excessive chilling.",
+                    "Persistent high fever, vomiting, severe headache, or confusion needs urgent medical evaluation.",
+                ],
+                'Kapha': [
+                    "For Kapha-type fever with heaviness/congestion, use warm herbal fluids and light warm meals.",
+                    "Avoid dairy-heavy, oily, and cold foods that can worsen mucus and slow recovery.",
+                    "If cough, breathing difficulty, or prolonged fever appears, consult a clinician immediately.",
+                ],
+                'General': [
+                    "For fever, rest well, hydrate frequently, and use warm easy-to-digest foods in small portions.",
+                    "Avoid heavy meals, deep-fried foods, and very cold drinks until appetite and strength improve.",
+                    "Seek urgent care for high persistent fever, breathing issues, dehydration, or severe weakness.",
+                ],
+            },
+            'headache': {
+                'Vata': [
+                    "For Vata-type headache, apply warm sesame oil to scalp/neck and rest in a quiet, dark room.",
+                    "Maintain hydration and regular meals; avoid skipping meals and late-night sleep loss.",
+                    "If headache is severe, recurrent, or associated with vision/neurological symptoms, seek urgent medical care.",
+                ],
+                'Pitta': [
+                    "For Pitta-type headache, use cooling measures like coriander-fennel water and avoid heat/sun exposure.",
+                    "Avoid spicy, sour, and fried foods during headache episodes.",
+                    "Seek medical evaluation if headache is severe, persistent, or associated with vomiting/fever.",
+                ],
+                'Kapha': [
+                    "For Kapha-type headache, use warm steam, gentle movement, and avoid cold heavy foods.",
+                    "Prefer light warm meals and avoid daytime sleeping when headache is present.",
+                    "Persistent sinus headache or breathing issues should be checked by a clinician.",
+                ],
+                'General': [
+                    "Headache care starts with hydration, sleep regularity, and reducing screen/strain triggers.",
+                    "Use gentle warm or cooling measures based on whether symptoms feel cold/stiff or hot/burning.",
+                    "Get urgent care for sudden severe headache, weakness, confusion, or visual changes.",
+                ],
+            },
+            'body_pain': {
+                'Vata': [
+                    "For Vata-type body pain, use warm oil massage and gentle stretching to reduce stiffness.",
+                    "Eat warm, nourishing meals and avoid cold dry foods that aggravate Vata pain.",
+                    "If pain persists, worsens, or limits movement, consult a qualified clinician promptly.",
+                ],
+                'Pitta': [
+                    "For Pitta-type body pain with heat/inflammation, use cooling foods and avoid spicy fried meals.",
+                    "Hydrate well and avoid overexertion during active pain.",
+                    "Persistent inflammatory pain should be medically evaluated.",
+                ],
+                'Kapha': [
+                    "For Kapha-type body pain with heaviness, keep active with gentle daily movement and warm therapies.",
+                    "Prefer light warm meals and reduce heavy dairy/fried foods.",
+                    "If pain remains for many days or swelling appears, seek professional assessment.",
+                ],
+                'General': [
+                    "Body pain improves with hydration, sleep, gentle movement, and regular warm meals.",
+                    "Avoid prolonged immobility and support recovery with light anti-inflammatory diet patterns.",
+                    "Seek medical care for persistent severe pain, weakness, fever, or trauma history.",
+                ],
+            },
+            'cough': {
+                'General': [
+                    "Use warm fluids and avoid chilled drinks to soothe cough and throat irritation.",
+                    "Choose light warm meals and avoid heavy dairy/oily foods during cough episodes.",
+                    "Seek medical care for breathlessness, chest pain, blood in sputum, or prolonged fever.",
+                ],
+            },
+            'diabetes': {
+                'General': [
+                    "Follow regular meal timing and control portions to reduce glucose fluctuations.",
+                    "Prefer bitter/astringent vegetables, whole foods, and daily physical activity.",
+                    "Do not stop prescribed diabetes medicines abruptly; monitor sugars and review with your clinician.",
+                ],
+            },
+        }
+
+        diet_tips = {
+            'Vata': [
+                "For Vata, diet plans should emphasize warm, cooked, slightly oily foods with regular meal timing.",
+                "Include soups, rice, root vegetables, and healthy fats; avoid very dry, cold, and irregular eating.",
+                "Keep dinner light but warm, and avoid skipping meals.",
+            ],
+            'Pitta': [
+                "For Pitta, choose cooling foods like cucumber, gourds, coconut, and fresh greens.",
+                "Reduce very spicy, sour, fried, and fermented foods to prevent heat/aggravation.",
+                "Prefer regular meal timing and avoid long fasting in hot weather.",
+            ],
+            'Kapha': [
+                "For Kapha, use light, warm, and mildly spiced foods with smaller portions.",
+                "Reduce sugars, heavy dairy, and fried foods; prioritize legumes and vegetables.",
+                "Early dinner and daily movement improve metabolic response.",
+            ],
+            'General': [
+                "A practical Ayurvedic diet plan uses regular meal timing, warm freshly cooked foods, and balanced portions.",
+                "Limit ultra-processed sugars, heavy late-night meals, and excessive cold drinks.",
+                "Adjust plan by condition, digestion strength, and constitution for best results.",
+            ],
+        }
+
+        recommendation_tips = {
+            'General': [
+                "Medicine recommendations should match symptom pattern, constitution, age, and current medications.",
+                "Use one clear regimen at a time and monitor response rather than mixing many products at once.",
+                "For safe long-term use, get dose and interaction guidance from a qualified practitioner.",
+            ],
+        }
+
         # --- Step 2: Select templates based on dosha AND question type ---
         # Two flavour groups per benefit type — picked by topic's first letter so
         # the same herb always gets the same set, but different herbs get different tips.
@@ -1014,10 +1235,36 @@ Related Question: {question}
                 dosha_key = d
                 break
 
+        _condition = None
+        if _re.search(r'\b(fever|high\s+fever|temperature|jvara|una)\b', _q):
+            _condition = 'fever'
+        elif _re.search(r'\b(headache|head\s+pain|head\s+hurt|oluwa|oluwata|migraine)\b', _q):
+            _condition = 'headache'
+        elif _re.search(r'\b(body\s+pain|muscle\s+pain|joint\s+pain|back\s+pain|pain\s+in\s+body)\b', _q):
+            _condition = 'body_pain'
+        elif _re.search(r'\b(cough|hawa)\b', _q):
+            _condition = 'cough'
+        elif _re.search(r'\b(diabetes|blood\s+sugar|madhumeha)\b', _q):
+            _condition = 'diabetes'
+
         # If no valid herb/topic was found (concept question like "what is pitta?"),
-        # skip herb tips and use general dosha lifestyle advice
+        # skip herb tips and use general dosha lifestyle advice.
+        if _is_diet_plan:
+            tips = diet_tips.get(dosha_key, diet_tips['General'])
+            print(f"✓ Diet-plan tips generated for {dosha_key}")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
+
+        if _is_recommendation:
+            tips = recommendation_tips.get(dosha_key, recommendation_tips['General'])
+            print(f"✓ Recommendation tips generated for {dosha_key}")
+            return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
+
         if _is_treatment:
-            tips = treatment_tips[dosha_key]
+            if _condition and _condition in condition_treatment_tips:
+                cond_map = condition_treatment_tips[_condition]
+                tips = cond_map.get(dosha_key, cond_map.get('General', treatment_tips[dosha_key]))
+            else:
+                tips = treatment_tips[dosha_key]
             print(f"✓ Treatment tips generated for {dosha_key}")
             return '\n'.join(f'{i+1}. {t}' for i, t in enumerate(tips))
 
@@ -1338,6 +1585,13 @@ Related Question: {question}
                     "Severe sudden headache, neurological symptoms, or persistent pain requires urgent medical assessment."
                 )
             },
+            'body pain': {
+                'treatment': (
+                    "General body pain in Ayurveda is often linked with Vata aggravation and Ama accumulation, so care focuses on warmth, digestion, and gentle movement. "
+                    "Supportive measures include warm oil application, light stretching, regular hydration, and easy-to-digest anti-inflammatory meals. "
+                    "If pain is severe, persistent, associated with fever, weakness, or trauma, seek clinical assessment promptly."
+                )
+            },
             'back pain': {
                 'treatment': (
                     "Back pain is commonly managed in Ayurveda as a Vata-aggravated musculoskeletal condition with warming and unctuous therapies. "
@@ -1365,16 +1619,194 @@ Related Question: {question}
                     "Bitter, astringent, and light foods are preferred while refined sugars and heavy meals are minimized. "
                     "Do not stop prescribed diabetes medicines abruptly; monitor sugars and coordinate with a clinician."
                 )
+            },
+            'constipation': {
+                'treatment': (
+                    "Constipation in Ayurveda is often a Vata-dominant condition related to dryness, irregular meals, and weak digestive rhythm. "
+                    "Supportive care includes warm fluids, fiber-rich cooked foods, regular meal timing, and gentle bowel-regulating herbs like Triphala in suitable doses. "
+                    "Persistent constipation, bleeding, severe abdominal pain, or weight loss should be medically evaluated."
+                )
+            },
+            'diarrhea': {
+                'treatment': (
+                    "Ayurvedic diarrhea care focuses first on hydration, light digestible food, and calming disturbed Agni. "
+                    "Use oral fluids, rice gruel, and rest while avoiding oily, spicy, and heavy meals until stools normalize. "
+                    "Urgent care is needed if there is dehydration, blood in stool, high fever, or persistent diarrhea."
+                )
+            },
+            'gastritis': {
+                'treatment': (
+                    "Gastritis is commonly managed as a Pitta-aggravated digestive disorder with cooling and non-irritating food strategies. "
+                    "Avoid spicy, sour, fried, and late-night meals, and maintain regular meal timing with gentle digestive support. "
+                    "Persistent vomiting, black stools, severe pain, or weight loss needs prompt medical review."
+                )
+            },
+            'sinusitis': {
+                'treatment': (
+                    "Ayurvedic sinus care targets Kapha congestion through warm steam, light food, and channel-clearing routines. "
+                    "Avoid cold and heavy foods, support drainage, and maintain hydration with warm fluids. "
+                    "Severe facial pain, high fever, or prolonged symptoms should be clinically assessed."
+                )
+            },
+            'sore throat': {
+                'treatment': (
+                    "Sore throat care in Ayurveda emphasizes warm fluids, throat soothing, and reducing irritant foods. "
+                    "Warm herbal gargles and light warm meals can support comfort while digestion is kept gentle. "
+                    "If swallowing is difficult, fever is high, or symptoms persist, seek medical evaluation."
+                )
+            },
+            'asthma': {
+                'treatment': (
+                    "Ayurvedic asthma management focuses on reducing Kapha obstruction and stabilizing Vata in the respiratory channels. "
+                    "Avoid known triggers, cold-heavy diet patterns, and support breathing with constitution-appropriate therapies. "
+                    "Acute breathlessness or wheeze requires immediate medical care and ongoing clinical supervision."
+                )
+            },
+            'insomnia': {
+                'treatment': (
+                    "Insomnia is often linked to aggravated Vata and irregular nervous system rhythms in Ayurveda. "
+                    "Regular sleep timing, evening calming routine, warm light dinner, and reduction of late stimulants are foundational measures. "
+                    "Persistent sleep disturbance with daytime dysfunction should be assessed by a healthcare professional."
+                )
+            },
+            'anxiety': {
+                'treatment': (
+                    "Ayurvedic anxiety care usually focuses on calming Vata through routine, nourishment, grounding practices, and breath regulation. "
+                    "Warm meals, adequate sleep, gentle movement, and reduced overstimulation are key lifestyle supports. "
+                    "Severe anxiety, panic, or safety concerns require direct mental health and medical support."
+                )
+            },
+            'stress': {
+                'treatment': (
+                    "Stress management in Ayurveda combines daily routine correction, digestion support, and mind-body practices. "
+                    "Short meditation, pranayama, regular meals, and restorative sleep can reduce stress reactivity over time. "
+                    "If stress causes major functional decline, seek professional support early."
+                )
+            },
+            'obesity': {
+                'treatment': (
+                    "Ayurvedic obesity management targets Kapha excess and metabolic sluggishness with disciplined diet and activity. "
+                    "Light, warm, low-sugar meals, regular exercise, and consistent daily timing are emphasized for sustainable change. "
+                    "Weight plans should be individualized and monitored, especially when diabetes, thyroid, or blood pressure issues are present."
+                )
+            },
+            'hypertension': {
+                'treatment': (
+                    "Ayurvedic support for high blood pressure includes stress reduction, salt moderation, sleep regulation, and constitution-guided herbs. "
+                    "Lifestyle consistency is essential: regular movement, calming breathing practices, and avoiding stimulant-heavy routines. "
+                    "Do not stop prescribed antihypertensive medication abruptly; monitor blood pressure and follow clinical guidance."
+                )
+            },
+            'cholesterol': {
+                'treatment': (
+                    "Ayurvedic cholesterol care focuses on reducing Ama and Kapha through diet quality, metabolism support, and regular activity. "
+                    "Limit fried and ultra-processed foods, improve fiber intake, and maintain meal consistency for long-term lipid control. "
+                    "People with cardiac risk should follow medical lipid monitoring alongside Ayurveda-based lifestyle changes."
+                )
+            },
+            'skin rash': {
+                'treatment': (
+                    "Skin rashes in Ayurveda are often approached as Pitta-Rakta disturbance with possible Ama contribution. "
+                    "Cooling diet, trigger avoidance, and gentle skin care are prioritized while digestion is supported. "
+                    "Spreading rash, fever, severe itching, or infection signs need prompt clinical examination."
+                )
+            },
+            'acne': {
+                'treatment': (
+                    "Ayurvedic acne care emphasizes reducing Pitta-Kapha aggravation through diet correction and gentle detoxifying support. "
+                    "Avoid excess sugar, oily foods, and frequent skin irritation; maintain bowel regularity and hydration. "
+                    "Persistent severe acne or scarring should be treated with professional dermatologic and Ayurvedic guidance."
+                )
+            },
+            'eczema': {
+                'treatment': (
+                    "Eczema management in Ayurveda includes reducing inflammatory triggers, strengthening digestion, and soothing skin barriers. "
+                    "Use non-irritating skin routines and avoid foods that repeatedly worsen itching or flare patterns. "
+                    "Widespread rash, oozing lesions, or recurrent infection should be medically reviewed."
+                )
+            },
+            'urinary tract infection': {
+                'treatment': (
+                    "Ayurvedic urinary discomfort care focuses on hydration, cooling support, and reducing irritation in urinary channels. "
+                    "Warm water intake and suitable dietary adjustments may help mild symptoms while avoiding dehydrating habits. "
+                    "Fever, flank pain, blood in urine, or persistent symptoms need immediate medical evaluation."
+                )
+            },
+            'kidney stones': {
+                'treatment': (
+                    "Ayurvedic kidney stone support centers on fluid intake, urinary channel care, and constitution-based herbal protocols. "
+                    "Diet and hydration are critical for prevention, with personalized adjustment based on recurrence pattern. "
+                    "Severe pain, vomiting, fever, or reduced urine output requires urgent medical care."
+                )
+            },
+            'menstrual pain': {
+                'treatment': (
+                    "Menstrual pain is often managed in Ayurveda by regulating Apana Vata through warmth, rest, and gentle digestive support. "
+                    "Avoid cold foods and overexertion during painful cycles, and use individualized supportive remedies as advised. "
+                    "Very severe pain, irregular heavy bleeding, or anemia symptoms should be clinically assessed."
+                )
+            },
+            'pcos': {
+                'treatment': (
+                    "Ayurvedic PCOS care integrates metabolic correction, cycle regulation, stress reduction, and individualized diet/lifestyle planning. "
+                    "Consistent sleep, exercise, and meal timing are key pillars along with constitution-matched therapeutic support. "
+                    "Long-term management should be coordinated with regular hormonal/metabolic clinical follow-up."
+                )
             }
         }
         if not _injected_context:
-            for _cond, _data in CONDITION_KB.items():
-                if _re_kb.search(r'\b' + _re_kb.escape(_cond) + r'\b', combined_query_for_intent.lower()):
-                    _cond_key = 'treatment' if question_intent in ('treatment', 'general') else question_intent
-                    _injected_context = _data.get(_cond_key) or _data.get('treatment')
-                    if _injected_context:
-                        print(f"🩺 Condition fast-path: '{_cond}'/{_cond_key}")
+            _cq = combined_query_for_intent.lower()
+            condition_patterns = {
+                'headache': [r'\bheadache\b', r'\bhead\s+pain\b', r'\bhead\s+hurts?\b', r'\bmigraine\b', r'\boluwa\b'],
+                'body pain': [r'\bbody\s+pain\b', r'\bbody\s+ache\b', r'\bmuscle\s+pain\b', r'\bpain\s+in\s+body\b'],
+                'back pain': [r'\bback\s+pain\b', r'\blower\s+back\b', r'\bsciatica\b'],
+                'joint pain': [r'\bjoint\s+pain\b', r'\barthritis\b', r'\bknee\s+pain\b', r'\bstiffness\b'],
+                'fever': [r'\bfever\b', r'\bhigh\s+fever\b', r'\btemperature\b', r'\buna\b', r'\bjvara\b', r'\bchills?\b'],
+                'cough': [r'\bcough\b', r'\bhawa\b', r'\bkasa\b'],
+                'cold': [r'\bcold\b', r'\bseetha\b', r'\bflu\b'],
+                'acidity': [r'\bacidity\b', r'\bheartburn\b', r'\bamlapitta\b'],
+                'diabetes': [r'\bdiabetes\b', r'\bblood\s+sugar\b', r'\bmadhumeha\b'],
+                'constipation': [r'\bconstipation\b', r'\bconstipated\b', r'\bhard\s+stool\b'],
+                'diarrhea': [r'\bdiarrh?ea\b', r'\bloose\s+motion\b', r'\bstomach\s+upset\b'],
+                'gastritis': [r'\bgastritis\b', r'\bstomach\s+burn\b', r'\bepigastric\s+pain\b'],
+                'sinusitis': [r'\bsinus\b', r'\bsinusitis\b', r'\bnasal\s+congestion\b'],
+                'sore throat': [r'\bsore\s+throat\b', r'\bthroat\s+pain\b', r'\bthroat\s+infection\b'],
+                'asthma': [r'\basthma\b', r'\bwheez(e|ing)\b', r'\bbreathless(ness)?\b'],
+                'insomnia': [r'\binsomnia\b', r'\bcannot\s+sleep\b', r'\bpoor\s+sleep\b', r'\bsleep\s+problem\b'],
+                'anxiety': [r'\banxiety\b', r'\bpanic\b', r'\bpalpitation\b'],
+                'stress': [r'\bstress\b', r'\bmental\s+stress\b', r'\boverwhelm(ed)?\b'],
+                'obesity': [r'\bobesity\b', r'\bweight\s+loss\b', r'\boverweight\b', r'\bweight\s+gain\b'],
+                'hypertension': [r'\bhypertension\b', r'\bhigh\s+blood\s+pressure\b', r'\bbp\s+high\b'],
+                'cholesterol': [r'\bcholesterol\b', r'\bldl\b', r'\btriglyceride\b', r'\blipid\b'],
+                'skin rash': [r'\bskin\s+rash\b', r'\brash\b', r'\bitch(y|ing)\b', r'\bhives\b'],
+                'acne': [r'\bacne\b', r'\bpimples?\b', r'\bblackheads?\b'],
+                'eczema': [r'\beczema\b', r'\bdermatitis\b'],
+                'urinary tract infection': [r'\buti\b', r'\burinary\s+infection\b', r'\bburning\s+urination\b', r'\bpainful\s+urination\b'],
+                'kidney stones': [r'\bkidney\s+stone\b', r'\brenal\s+stone\b', r'\bstone\s+pain\b'],
+                'menstrual pain': [r'\bperiod\s+pain\b', r'\bmenstrual\s+pain\b', r'\bdysmenorrhea\b'],
+                'pcos': [r'\bpcos\b', r'\bpolycystic\s+ovary\b', r'\birregular\s+period\b'],
+            }
+
+            matched_condition = None
+            for cond, pats in condition_patterns.items():
+                if any(_re_kb.search(p, _cq) for p in pats):
+                    matched_condition = cond
                     break
+
+            if matched_condition and matched_condition in CONDITION_KB:
+                _data = CONDITION_KB[matched_condition]
+                _cond_key = 'treatment' if question_intent in ('treatment', 'general') else question_intent
+                _injected_context = _data.get(_cond_key) or _data.get('treatment')
+                if _injected_context:
+                    print(f"🩺 Condition fast-path: '{matched_condition}'/{_cond_key}")
+            else:
+                for _cond, _data in CONDITION_KB.items():
+                    if _re_kb.search(r'\b' + _re_kb.escape(_cond) + r'\b', _cq):
+                        _cond_key = 'treatment' if question_intent in ('treatment', 'general') else question_intent
+                        _injected_context = _data.get(_cond_key) or _data.get('treatment')
+                        if _injected_context:
+                            print(f"🩺 Condition fast-path: '{_cond}'/{_cond_key}")
+                        break
 
         if not _injected_context and question_intent == 'diet_plan':
             _injected_context = (
@@ -1715,12 +2147,19 @@ Related Question: {question}
         else:
             detected_dosha = self._detect_dosha_from_question(question_for_processing_en, base_answer)
             print(f"🧬 Detected dosha from question: {detected_dosha}")
-        personalized_tips = self._generate_personalized_tips(
+        template_tips = self._generate_personalized_tips(
             question_for_processing_en,
             base_answer,
             detected_dosha,
             original_question=original_question
         )
+        personalized_tips = self._generate_dynamic_personalized_tips(
+            question=question_for_processing_en,
+            base_answer=base_answer,
+            dosha=detected_dosha,
+            sources=top_context_docs,
+            original_question=original_question
+        ) or template_tips
         
         # Format response with similarity percentages — include web source URLs
         formatted_citations = []
