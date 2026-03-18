@@ -703,6 +703,8 @@ Related Question: {question}
             ('side_effects', r'\b(side\s*effects?|adverse|harm|danger|risk|unsafe|caution|warning|contraindication)\b'),
             ('dosage', r'\b(dosage|dose|how much|how many|how often|how long|amount|quantity|when to take|how to take)\b'),
             ('combination', r'\b(combine|combined|together|with|mix|can i take .* with|interaction)\b'),
+            ('diet_plan', r'\b(diet|meal plan|food plan|what to eat|foods to avoid|diet plan|eating plan|nutrition)\b'),
+            ('recommendation', r'\b(recommend|recommendation|which medicine|what medicine|best medicine|tablet|syrup|drug|herb for)\b'),
             ('treatment', r'\b(treat|treatment|manage|relief|what to do|i have|suffering|symptom|fever|cold|cough|pain|infection|remedy)\b'),
             ('benefits', r'\b(benefit|benefits|uses|properties|guna|good for|helps|advantages)\b'),
             ('definition', r'\b(what is|what are|meaning|define|explain|describe)\b'),
@@ -725,6 +727,8 @@ Related Question: {question}
             'dosage': 'dosage amount frequency how to take with food timing ayurveda',
             'combination': 'combination with interactions synergy bioavailability compatibility',
             'treatment': 'symptoms causes ayurvedic treatment home remedies diet lifestyle',
+            'diet_plan': 'diet plan foods to eat foods to avoid meal timing ayurveda',
+            'recommendation': 'medicine recommendation ayurvedic herbs formula safety suitability',
             'definition': 'definition explanation ayurvedic concept basics',
             'general': 'ayurvedic guidance practical advice',
         }
@@ -1291,6 +1295,16 @@ Related Question: {question}
                     "In Ayurveda, fever (Jvara) is managed with light, warm fluids and herbs that support digestion and immunity. "
                     "Useful home support includes warm Tulsi-ginger tea, adequate rest, and easily digestible foods like rice gruel or thin mung soup. "
                     "If fever is high, persistent, or associated with dehydration or breathing difficulty, seek medical care promptly in addition to Ayurvedic support."
+                ),
+                'diet_plan': (
+                    "For fever, prefer warm and easy-to-digest foods such as rice gruel, clear mung soup, and warm herbal fluids in small frequent servings. "
+                    "Avoid fried, heavy, very spicy, and chilled foods until appetite and digestion recover. "
+                    "Hydration and rest are essential; if fever remains high or prolonged, seek medical care promptly."
+                ),
+                'recommendation': (
+                    "Ayurvedic support for fever commonly includes Tulsi, dry ginger, and Guduchi based on constitution and symptom pattern. "
+                    "Use only moderate home doses and avoid combining many medicines without guidance. "
+                    "Persistent, high, or complicated fever needs direct assessment by a qualified clinician."
                 )
             },
             'cough': {
@@ -1298,6 +1312,16 @@ Related Question: {question}
                     "Ayurvedic care for cough focuses on reducing mucus and soothing irritated airways with warm, spiced liquids. "
                     "Tulsi, dry ginger, black pepper, and honey are traditionally used in small amounts to support relief. "
                     "Avoid cold, oily, and heavy foods during cough episodes, and seek medical evaluation if cough persists or worsens."
+                ),
+                'diet_plan': (
+                    "For cough, choose warm soups, ginger-tulsi infusions, and light cooked meals that are easy to digest. "
+                    "Avoid chilled drinks, ice cream, heavy dairy, and deep-fried foods that increase Kapha congestion. "
+                    "Keep meals light at night and use warm water throughout the day."
+                ),
+                'recommendation': (
+                    "Common Ayurvedic options for cough include Tulsi, Vasa, dry ginger, and long pepper depending on dry vs productive cough. "
+                    "Select medicines according to symptom type, age, and existing conditions rather than one formula for everyone. "
+                    "Seek medical review if breathlessness, chest pain, blood in sputum, or prolonged fever is present."
                 )
             },
             'cold': {
@@ -1305,6 +1329,41 @@ Related Question: {question}
                     "For common cold, Ayurveda emphasizes warm hydration, steam inhalation, and light foods to protect Agni (digestive fire). "
                     "Tulsi-ginger-pepper decoction and warm soups are commonly used to reduce congestion and support recovery. "
                     "Rest well and avoid chilled foods; consult a clinician if symptoms are severe or prolonged."
+                )
+            },
+            'headache': {
+                'treatment': (
+                    "Ayurvedic headache care depends on dosha pattern: Vata headaches improve with warmth and rest, while Pitta headaches need cooling measures. "
+                    "Regular hydration, sleep correction, gentle neck/shoulder relaxation, and avoiding trigger foods are key first steps. "
+                    "Severe sudden headache, neurological symptoms, or persistent pain requires urgent medical assessment."
+                )
+            },
+            'back pain': {
+                'treatment': (
+                    "Back pain is commonly managed in Ayurveda as a Vata-aggravated musculoskeletal condition with warming and unctuous therapies. "
+                    "Useful support includes warm oil application, gentle stretching, posture correction, and anti-inflammatory dietary patterns. "
+                    "If pain radiates to the leg, causes weakness, or persists, clinical evaluation is necessary."
+                )
+            },
+            'joint pain': {
+                'treatment': (
+                    "Ayurvedic joint pain care focuses on reducing Vata and Ama through warm digestion-supportive diet and localized oil therapies. "
+                    "Dry ginger, Dashamoola-type formulations, and gentle daily movement are commonly recommended based on constitution. "
+                    "Persistent swelling, severe morning stiffness, or fever needs professional evaluation."
+                )
+            },
+            'acidity': {
+                'treatment': (
+                    "Acidity is often a Pitta-dominant condition in Ayurveda and is managed with cooling, non-irritating foods and meal regularity. "
+                    "Avoid very spicy, sour, fried, and late-night meals; use calming digestive support like coriander-fennel style preparations. "
+                    "Frequent severe acidity, vomiting, or weight loss should be medically evaluated."
+                )
+            },
+            'diabetes': {
+                'treatment': (
+                    "Ayurvedic diabetes management combines diet discipline, regular physical activity, and constitution-matched herbs over time. "
+                    "Bitter, astringent, and light foods are preferred while refined sugars and heavy meals are minimized. "
+                    "Do not stop prescribed diabetes medicines abruptly; monitor sugars and coordinate with a clinician."
                 )
             }
         }
@@ -1316,6 +1375,22 @@ Related Question: {question}
                     if _injected_context:
                         print(f"🩺 Condition fast-path: '{_cond}'/{_cond_key}")
                     break
+
+        if not _injected_context and question_intent == 'diet_plan':
+            _injected_context = (
+                "A practical Ayurvedic diet plan starts with regular meal timing, freshly cooked warm meals, and constitution-specific food choices. "
+                "Include easy-to-digest whole foods, adequate hydration, and avoid ultra-processed, very cold, and late heavy meals. "
+                "For a personalized plan, include your main condition, digestion pattern, and dominant dosha in the question."
+            )
+            print("🥗 Generic diet-plan fast-path used")
+
+        if not _injected_context and question_intent == 'recommendation':
+            _injected_context = (
+                "Ayurvedic medicine recommendations should be tailored to symptom pattern, constitution, age, and current medications. "
+                "General advice can suggest herb categories, but exact product and dose selection should be individualized for safety. "
+                "For best recommendations, ask with condition details, duration, and whether you are already taking any medicines."
+            )
+            print("💊 Generic recommendation fast-path used")
         # ── END CONDITION KNOWLEDGE BASE ───────────────────────────────────────
 
         # ── HERB KNOWLEDGE BASE ──────────────────────────────────────────────────
@@ -1383,6 +1458,11 @@ Related Question: {question}
                 "It helps lower blood pressure, supports heart health, and has strong antibacterial and antifungal properties. "
                 "Garlic balances Vata and Kapha doshas and is most potent when consumed raw or lightly cooked each morning."
             ),
+            'Bitter Gourd': (
+                "Bitter gourd (Karela, Momordica charantia) is used in Ayurveda to support blood sugar balance, digestion, and liver function. "
+                "It has traditionally recognized bitter principles that help metabolism and may reduce excess Kapha and Pitta heat when used appropriately. "
+                "Bitter gourd is commonly taken as cooked food or fresh juice in moderate amounts, and long-term use should be individualized based on constitution and health status."
+            ),
         }
         # Aliases: English misspellings + romanized Sinhala → HERB_KB key
         _HERB_KB_ALIASES = {
@@ -1398,6 +1478,10 @@ Related Question: {question}
             'cardamom': 'Cardamom', 'elachi': 'Cardamom',
             'pepper': 'Pepper',
             'garlic': 'Garlic',
+            'bitter gourd': 'Bitter Gourd', 'bitter melon': 'Bitter Gourd', 'karela': 'Bitter Gourd',
+            'karavila': 'Bitter Gourd', 'karawila': 'Bitter Gourd',
+            'nilkatarodumal': 'Bitter Gourd', 'nilkatarodumala': 'Bitter Gourd',
+            'nil katarodumal': 'Bitter Gourd', 'nil kata rodumal': 'Bitter Gourd',
         }
         # Check translated question first, then original (catches romanized Sinhala)
         import re as _re_herb_kb
@@ -1474,12 +1558,18 @@ Related Question: {question}
                 'welpenela': 'Brahmi',
                 'gotukola':  'Brahmi',
                 'nelli':     'Amla',
+                'karavila':  'Bitter Gourd',
+                'karawila':  'Bitter Gourd',
+                'karela':    'Bitter Gourd',
+                'nilkatarodumal': 'Bitter Gourd',
+                'nilkatarodumala': 'Bitter Gourd',
             }
             _HERB_PATTERN = (
                 r'\b(turmeric|tumeric|cinnamon|ginger|neem|ashwagandha|triphala|tulsi|aloe vera|'
                 r'brahmi|shatavari|cardamom|cumin|fenugreek|amla|nelli|kohomba|kurudu|'
                 r'inguru|kaha|welpenela|gotukola|licorice|pepper|clove|nutmeg|garlic|'
-                r'curry leaf|moringa|sesame|coconut|ghee)\b'
+                r'curry leaf|moringa|sesame|coconut|ghee|karela|bitter gourd|bitter melon|'
+                r'karavila|karawila|nilkatarodumal|nilkatarodumala)\b'
             )
             # Try translated question first; fall back to original (romanized) question
             _herb_match = _re_ctx.search(_HERB_PATTERN, question_for_processing_en.lower())
@@ -1515,6 +1605,8 @@ Related Question: {question}
                 'dosage': {'dose', 'dosage', 'amount', 'frequency', 'daily', 'take', 'timing'},
                 'combination': {'combine', 'combination', 'with', 'interaction', 'mix', 'pepper'},
                 'treatment': {'treat', 'treatment', 'symptom', 'manage', 'relief', 'fever', 'cough', 'cold'},
+                'diet_plan': {'diet', 'meal', 'food', 'avoid', 'eat', 'nutrition', 'plan'},
+                'recommendation': {'recommend', 'medicine', 'herb', 'formula', 'best', 'suitable'},
                 'definition': {'what', 'definition', 'meaning', 'explain'},
                 'benefits': {'benefit', 'use', 'helps', 'supports', 'improves'},
                 'general': {'ayurveda', 'health'},
@@ -1673,38 +1765,60 @@ Related Question: {question}
         
         # === TRANSLATION: Translate answer back to user's language ===
         display_answer = final_answer  # Default: English version
+        import re as _re_tips
         
         if self.enable_translation and self.translator and detected_language == 'si':
             # For ALL Sinhala inputs (romanized OR Unicode), translate answer to Sinhala
             # Workflow: Singlish/Sinhala input → English processing → Sinhala output
-            print("🔄 Translating answer to Sinhala...")
-            
-            # Step 1: Simplify English sentences for cleaner Google Translate output
-            simplified_english = self._simplify_for_translation(final_answer)
-            print(f"📝 Simplified for translation: {simplified_english[:100]}...")
-            
-            # Step 2: Translate
-            raw_translation = self.translator.translate_en_to_si(simplified_english)
-            
-            # Step 3: Clean up translated Sinhala text
-            cleaned_translation = self._cleanup_translated_answer(raw_translation)
-            
-            if cleaned_translation and len(cleaned_translation.strip()) >= 20:
-                display_answer = cleaned_translation.strip()
+            print("🔄 Translating answer to Sinhala (line by line)...")
+            translated_answer_lines = []
+            source_lines = [l for l in final_answer.split('\n') if l.strip()]
+
+            for ans_line in source_lines:
+                stripped = ans_line.strip()
+                m = _re_tips.match(r'^([\-•\*]\s*)', stripped)
+                prefix = m.group(1) if m else ''
+                text = stripped[len(prefix):].strip() if m else stripped
+
+                simplified = self._simplify_for_translation(text)
+                translated = self.translator.translate_en_to_si(simplified)
+                cleaned = self._cleanup_translated_answer(translated)
+
+                if cleaned and len(cleaned.strip()) > 5:
+                    translated_answer_lines.append(f"{prefix}{cleaned.strip()}")
+                elif translated and len(translated.strip()) > 5:
+                    translated_answer_lines.append(f"{prefix}{translated.strip()}")
+                else:
+                    translated_answer_lines.append(ans_line)
+
+            if translated_answer_lines:
+                display_answer = '\n'.join(translated_answer_lines).strip()
                 print(f"\u2713 Translation complete: {display_answer[:100]}...")
             else:
-                # cleaned_translation is empty — either cleanup over-filtered or ASCII guard fired.
-                # Do NOT fall back to raw_translation (may still contain garbled English).
-                print("⚠️  Translation filtered/empty, using English fallback")
+                print("⚠️  Translation returned empty output, using English fallback")
                 display_answer = final_answer
 
         elif self.enable_translation and self.translator and detected_language == 'ta':
             # Tamil input → translate answer to Tamil
-            print("🔄 Translating answer to Tamil...")
-            simplified_english = self._simplify_for_translation(final_answer)
-            raw_translation = self.translator.translate_en_to_ta(simplified_english)
-            if raw_translation and raw_translation.strip():
-                display_answer = raw_translation.strip()
+            print("🔄 Translating answer to Tamil (line by line)...")
+            translated_answer_lines = []
+            source_lines = [l for l in final_answer.split('\n') if l.strip()]
+
+            for ans_line in source_lines:
+                stripped = ans_line.strip()
+                m = _re_tips.match(r'^([\-•\*]\s*)', stripped)
+                prefix = m.group(1) if m else ''
+                text = stripped[len(prefix):].strip() if m else stripped
+
+                simplified = self._simplify_for_translation(text)
+                translated = self.translator.translate_en_to_ta(simplified)
+                if translated and len(translated.strip()) > 5:
+                    translated_answer_lines.append(f"{prefix}{translated.strip()}")
+                else:
+                    translated_answer_lines.append(ans_line)
+
+            if translated_answer_lines:
+                display_answer = '\n'.join(translated_answer_lines).strip()
                 print(f"\u2713 Tamil translation complete: {display_answer[:100]}...")
             else:
                 display_answer = final_answer
@@ -1712,7 +1826,6 @@ Related Question: {question}
         # Translate tips line-by-line to the user's language (Sinhala or Tamil).
         # Per-line translation avoids the compound-sentence artefacts that appeared
         # when translating the whole block at once.
-        import re as _re_tips
         if self.enable_translation and self.translator and detected_language in ('si', 'ta') and personalized_tips:
             print(f"🔄 Translating tips to {detected_language.upper()} (line by line)...")
             translated_lines = []

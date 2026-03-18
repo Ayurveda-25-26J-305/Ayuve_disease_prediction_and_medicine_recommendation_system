@@ -160,6 +160,10 @@ SINHALA_TO_ENGLISH_DICT = {
     'kottamalli': 'coriander', 'kothamalli': 'coriander',
     'nelli': 'gooseberry', 'nellie': 'gooseberry',
     'kohomba': 'neem', 'kohumba': 'neem',
+    'karavila': 'bitter gourd', 'karawila': 'bitter gourd',
+    'karela': 'bitter gourd',
+    'nilkatarodumal': 'bitter gourd', 'nilkatarodumala': 'bitter gourd',
+    'nil': 'blue',
     'mukunuwenna': 'sessile joyweed',
     'ranawara': 'senna',
     'beli': 'bael fruit',
@@ -382,6 +386,45 @@ class TranslationService:
         
         logger.info(f"Keyword-based translation: '{text}' → '{result}'")
         return result
+
+    def _score_english_query_candidate(self, candidate: str) -> int:
+        """
+        Heuristic scoring for translated query quality.
+        Higher score means more likely useful for retrieval and intent detection.
+        """
+        if not candidate:
+            return -10
+
+        c = candidate.strip()
+        c_low = c.lower()
+        score = 0
+
+        if len(c) >= 8:
+            score += 1
+        if re.search(r'[a-z]{3,}', c_low):
+            score += 1
+        if not re.search(r'[\u0D80-\u0DFF]', c):
+            score += 1
+
+        intent_terms = [
+            'what', 'how', 'benefit', 'use', 'property', 'treatment', 'treat',
+            'diet', 'food', 'medicine', 'recommend', 'pain', 'fever', 'cough',
+            'cold', 'dosage', 'side effect', 'symptom'
+        ]
+        if any(t in c_low for t in intent_terms):
+            score += 2
+
+        herb_terms = [
+            'bitter gourd', 'turmeric', 'cinnamon', 'ginger', 'neem', 'ashwagandha',
+            'triphala', 'tulsi', 'amla', 'brahmi', 'garlic'
+        ]
+        if any(h in c_low for h in herb_terms):
+            score += 2
+
+        if len(c) > 220:
+            score -= 1
+
+        return score
     
     def _transliterate_to_sinhala(self, text: str) -> str:
         """
@@ -471,19 +514,35 @@ class TranslationService:
 
         try:
             if is_romanized:
-                # For romanized Singlish, Google Translate (source='auto') gives far
-                # better results than word-by-word keyword mapping, because it
-                # understands full context (e.g. "mage oluwa ridenawa" → "my head hurts").
-                # Keyword dict is only used as a fallback if Google fails.
+                # Romanized Singlish can be noisy. Build multiple candidates and
+                # choose the most retrieval-friendly one.
+                keyword_candidate = self._translate_romanized_keywords(text)
+                candidates = [keyword_candidate]
+
                 try:
                     gt = self._google_translator(source='auto', target='en')
-                    translated = gt.translate(text)
-                    logger.info(f"Google-translated Singlish: '{text}' → '{translated}'")
-                    return translated
+                    direct_gt = gt.translate(text)
+                    candidates.append(direct_gt)
+
+                    # Translate keyword-expanded phrase as an additional option.
+                    # This often preserves herb names better.
+                    if keyword_candidate and keyword_candidate != text:
+                        expanded_gt = gt.translate(keyword_candidate)
+                        candidates.append(expanded_gt)
                 except Exception as e:
-                    logger.warning(f"Google Translate failed for Singlish, falling back to keyword dict: {e}")
-                    translated = self._translate_romanized_keywords(text)
-                    return translated
+                    logger.warning(f"Google Translate failed for Singlish, using keyword candidate: {e}")
+
+                scored = sorted(
+                    ((self._score_english_query_candidate(c), c) for c in candidates if c and c.strip()),
+                    key=lambda x: x[0],
+                    reverse=True
+                )
+                if scored:
+                    best = scored[0][1].strip()
+                    logger.info(f"Selected Singlish translation candidate: '{best}'")
+                    return best
+
+                return text
             else:
                 # Sinhala Unicode → English via Google Translate
                 gt = self._google_translator(source='si', target='en')
