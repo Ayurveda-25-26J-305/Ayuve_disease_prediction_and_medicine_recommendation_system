@@ -596,30 +596,27 @@ Related Question: {question}
         """
         if not is_romanized or not self.translator:
             return answer
-        
-        # Import the dictionary
-        from translation_service import SINHALA_TO_ENGLISH_DICT
-        
-        # Extract romanized keywords from the question
+
+        # Only clarify known herb/ingredient aliases to avoid noisy symptom-word headers.
         import re
         words = re.findall(r'\b\w+\b', original_question.lower())
-        
+        herb_alias_map = {
+            'kaha': 'turmeric', 'kurudu': 'cinnamon', 'inguru': 'ginger',
+            'kohomba': 'neem', 'kothamalli': 'coriander', 'kottamalli': 'coriander',
+            'nelli': 'gooseberry', 'karavila': 'bitter gourd', 'karawila': 'bitter gourd',
+            'karela': 'bitter gourd', 'nilkatarodumal': 'bitter gourd', 'nilkatarodumala': 'bitter gourd',
+            'gammiris': 'black pepper', 'thippili': 'long pepper', 'welpenela': 'aloe vera',
+        }
+
         # Find herb/ingredient keywords that were translated
         clarifications = []
         seen = set()
-        
+
         for word in words:
-            if word in SINHALA_TO_ENGLISH_DICT and word not in seen:
-                english_word = SINHALA_TO_ENGLISH_DICT[word]
-                
-                # Only clarify nouns (herbs, ingredients, etc.) not question words
-                question_words = {'monawada', 'mokadda', 'mokada', 'kohomada', 'kawuda', 
-                                'kauda', 'kiyada', 'keyada', 'da', 'eka', 'wala', 'walata'}
-                
-                if word not in question_words and len(english_word) > 3:
-                    # Capitalize for clarity
-                    clarifications.append(f"{word.capitalize()} ({english_word})")
-                    seen.add(word)
+            if word in herb_alias_map and word not in seen:
+                english_word = herb_alias_map[word]
+                clarifications.append(f"{word.capitalize()} ({english_word})")
+                seen.add(word)
         
         # If we found terms to clarify, prepend to answer
         if clarifications:
@@ -765,6 +762,11 @@ Related Question: {question}
             if not line:
                 continue
             line = re.sub(r'^\s*(?:\d+\s*[\).:-]?|[-•\*])\s*', '', line).strip()
+            # Reject clearly corrupted sequences from generation artifacts.
+            if re.search(r'(\d)\1{8,}', line):
+                continue
+            if re.search(r'[A-Za-z]*0{8,}[A-Za-z]*', line):
+                continue
             if len(line) < 20:
                 continue
             tips.append(line)
@@ -1528,11 +1530,14 @@ Generate exactly 3 concise personalized tips now.<|end|>
         import re as _re_kb
         _q_lower = question_for_processing_en.lower()
         _injected_context = None
-        for _concept_key, _concept_text in CONCEPT_KB.items():
-            if _re_kb.search(r'\b' + _concept_key + r'\b', _q_lower):
-                _injected_context = _concept_text
-                print(f"📖 Concept question detected: '{_concept_key}' — using curated KB context")
-                break
+        # Only use concept fast-path for definition/general intent. This avoids
+        # overriding clinical questions that happen to mention dosha words.
+        if question_intent in ('definition', 'general'):
+            for _concept_key, _concept_text in CONCEPT_KB.items():
+                if _re_kb.search(r'\b' + _concept_key + r'\b', _q_lower):
+                    _injected_context = _concept_text
+                    print(f"📖 Concept question detected: '{_concept_key}' — using curated KB context")
+                    break
         # ── END CONCEPT KNOWLEDGE BASE ───────────────────────────────────────────
 
         # ── CONDITION KNOWLEDGE BASE (general symptom questions) ────────────────
@@ -1756,6 +1761,7 @@ Generate exactly 3 concise personalized tips now.<|end|>
         }
         if not _injected_context:
             _cq = combined_query_for_intent.lower()
+            _cq_all = f"{_cq} {original_question.lower()}"
             condition_patterns = {
                 'headache': [r'\bheadache\b', r'\bhead\s+pain\b', r'\bhead\s+hurts?\b', r'\bmigraine\b', r'\boluwa\b'],
                 'body pain': [r'\bbody\s+pain\b', r'\bbody\s+ache\b', r'\bmuscle\s+pain\b', r'\bpain\s+in\s+body\b'],
@@ -1789,7 +1795,7 @@ Generate exactly 3 concise personalized tips now.<|end|>
 
             matched_condition = None
             for cond, pats in condition_patterns.items():
-                if any(_re_kb.search(p, _cq) for p in pats):
+                if any(_re_kb.search(p, _cq_all) for p in pats):
                     matched_condition = cond
                     break
 
@@ -1801,7 +1807,7 @@ Generate exactly 3 concise personalized tips now.<|end|>
                     print(f"🩺 Condition fast-path: '{matched_condition}'/{_cond_key}")
             else:
                 for _cond, _data in CONDITION_KB.items():
-                    if _re_kb.search(r'\b' + _re_kb.escape(_cond) + r'\b', _cq):
+                    if _re_kb.search(r'\b' + _re_kb.escape(_cond) + r'\b', _cq_all):
                         _cond_key = 'treatment' if question_intent in ('treatment', 'general') else question_intent
                         _injected_context = _data.get(_cond_key) or _data.get('treatment')
                         if _injected_context:
