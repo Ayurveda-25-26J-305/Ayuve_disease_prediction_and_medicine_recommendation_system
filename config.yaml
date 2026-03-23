@@ -31,15 +31,23 @@ index_path: faiss_index
 load_existing_index: true
 
 # -------------------------------
-# LLM Configuration
+# LLM Configuration  (Groq API)
 # -------------------------------
-llm_type: local
+llm_type: groq
 
-#  Lightweight & stable model
+# Groq model to use
+groq_model: "llama-3.3-70b-versatile"
+
+# Your Groq API key (get one free at https://console.groq.com)
+# DO NOT hardcode your real key here if pushing to GitHub.
+# We removed it to allow the GitHub push. Use an environment variable or Colab Secrets.
+groq_api_key: "YOUR_API_KEY_HERE"
+
+# Fallback local model name (not used when llm_type is groq)
 llm_model: "microsoft/Phi-3-mini-4k-instruct"
 
 # Generation settings
-max_new_tokens: 80
+max_new_tokens: 512
 
 # -------------------------------
 # RAG Settings

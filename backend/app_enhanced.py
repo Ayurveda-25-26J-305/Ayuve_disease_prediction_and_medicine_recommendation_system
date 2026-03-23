@@ -95,16 +95,22 @@ def initialize_system():
         web_db = None
     
     # Initialize Enhanced LLM with validation and personalization
-    print("\n🔄 Loading Enhanced LLM (this may take a minute)...")
+    llm_type = config.get('llm_type', 'local')
+    if llm_type == 'groq':
+        print(f"\n🔄 Connecting to Groq API  (model: {config.get('groq_model')})...")
+    else:
+        print("\n🔄 Loading local LLM (this may take a minute)...")
+
     rag_system = EnhancedAyurvedicRAG(
-        llm_model_name=config['llm_model'],
-        max_new_tokens=config.get('max_new_tokens', 128),
+        config=config,                              # pass full config - picks up llm_type
+        max_new_tokens=config.get('max_new_tokens', 512),
         enable_validation=True,
         enable_personalization=True,
         enable_translation=True,
         embedding_model=config['embedding_model']
     )
-    print("✓ Enhanced LLM initialized (Validation + Personalization enabled)")
+    backend_label = "Groq API" if llm_type == 'groq' else "Local Phi-3"
+    print(f"✓ Enhanced LLM initialized [{backend_label}]  (Validation + Personalization enabled)")
     rag_system._answer_cache.clear()
     print("✓ Answer cache cleared")
     

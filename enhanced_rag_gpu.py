@@ -1,14 +1,10 @@
 """
-Force GPU Execution - Enhanced RAG
-This version forces the model to stay on GPU (may use more memory)
+Enhanced RAG - Groq API Edition
+Replaces local Phi-3 with Groq cloud LLM. No GPU required.
 """
 
-import torch
 import logging
 from typing import Dict, Any, Optional
-
-# Use the working LLM from main system (no cache issues)
-from llm_architecture import LLMArchitecture
 
 # Import the new engines
 from validation_engine import ValidationEngine
@@ -25,27 +21,52 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _load_llm(config: dict):
+    """
+    Factory: return a GroqLLM or LLMArchitecture depending on config['llm_type'].
+    Accepts the full config dict so both backends get all the settings they need.
+    """
+    llm_type = config.get('llm_type', 'local').lower()
+
+    if llm_type == 'groq':
+        from groq_llm import GroqLLM
+        logger.info('LLM backend: Groq API')
+        return GroqLLM(config)
+    else:
+        import torch
+        from llm_architecture import LLMArchitecture
+        logger.info('LLM backend: local (Phi-3)')
+        return LLMArchitecture(config)
+
+
 # Using LLMArchitecture from llm_architecture.py (imported above)
 # This avoids the DynamicCache error
 
 
 class EnhancedAyurvedicRAG:
-    """Enhanced RAG - FORCE GPU"""
-    
+    """Enhanced RAG - Groq API Edition (no GPU required)"""
+
     def __init__(
-        self, 
-        llm_model_name: str,
+        self,
+        config: dict = None,           # full config dict (preferred)
+        llm_model_name: str = None,    # legacy arg kept for compatibility
         max_new_tokens: int = 64,
         enable_validation: bool = True,
         enable_personalization: bool = True,
         enable_translation: bool = True,
         embedding_model: str = "BAAI/bge-base-en-v1.5"
     ):
-        # Initialize base LLM
-        self.llm = LLMArchitecture({
-            "llm_model": llm_model_name,
-            "max_new_tokens": max_new_tokens,
-        })
+        # Build effective config
+        if config is None:
+            # Legacy call: only llm_model_name was passed
+            config = {
+                'llm_type': 'local',
+                'llm_model': llm_model_name or '',
+                'max_new_tokens': max_new_tokens,
+            }
+
+        # Initialize LLM via factory (Groq or local)
+        self.llm = _load_llm(config)
         
         # Initialize validation engine
         self.enable_validation = enable_validation
