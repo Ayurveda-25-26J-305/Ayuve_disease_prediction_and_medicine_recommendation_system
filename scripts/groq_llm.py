@@ -9,6 +9,7 @@ Exposes the same interface as LLMArchitecture:
 No GPU required. Starts in < 2 seconds.
 """
 
+import os
 import re
 import logging
 from typing import List, Dict, Optional
@@ -45,7 +46,10 @@ class GroqLLM:
                 "groq package not installed. Run:  pip install groq"
             )
 
-        self.api_key        = config.get("groq_api_key", "")
+        config_api_key = str(config.get("groq_api_key", "")).strip()
+        if config_api_key == "YOUR_API_KEY_HERE":
+            config_api_key = ""
+        self.api_key        = config_api_key or os.getenv("GROQ_API_KEY", "").strip()
         self.model          = config.get("groq_model", "llama-3.3-70b-versatile")
         self.max_new_tokens = int(config.get("max_new_tokens", 512))
         self.device         = "cpu"   # TranslationService reads this attribute
