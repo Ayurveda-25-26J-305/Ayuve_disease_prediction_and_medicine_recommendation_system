@@ -25,8 +25,8 @@ models/
 *.bin
 *.safetensors
 
-# FAISS Index (can be regenerated)
-faiss_index/
+# FAISS Index — committed so Railway skips the slow rebuild
+# faiss_index/
 
 # User Data
 user_profiles/
