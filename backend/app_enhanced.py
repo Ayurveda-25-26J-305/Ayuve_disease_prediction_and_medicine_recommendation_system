@@ -497,9 +497,10 @@ def get_stats():
 if __name__ == '__main__':
     # Initialize system before starting server
     if initialize_system():
-        print("\n🚀 Starting Flask server on http://localhost:5000")
+        port = int(os.environ.get('PORT', 5000))
+        print(f"\n🚀 Starting Flask server on port {port}")
         print("Press Ctrl+C to stop\n")
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        app.run(host='0.0.0.0', port=port, debug=False)
     else:
         print("\n❌ Failed to initialize system. Exiting.")
         sys.exit(1)

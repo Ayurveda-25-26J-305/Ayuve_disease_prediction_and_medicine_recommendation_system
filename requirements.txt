@@ -25,12 +25,9 @@ groq>=0.13.0
 # Configuration
 pyyaml>=6.0
 
+# Translation (Sinhala <-> English)
+deep-translator>=1.11.0
+langdetect>=1.0.9
+
 # Utilities
 tqdm>=4.65.0
-
-# Logging
-logging
-
-# For quantization (OPTIONAL - uncomment if using quantized models)
-# bitsandbytes>=0.41.0
-# accelerate>=0.25.0
