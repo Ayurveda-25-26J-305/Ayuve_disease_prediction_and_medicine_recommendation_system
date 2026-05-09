@@ -99,16 +99,6 @@ result = predictor.predict_disease(
 - **Visualization:** matplotlib, seaborn
 - **Notebook:** Jupyter
 
-## 📂 Project Structure
-```
-├── data/                    # Datasets
-├── notebooks/               # Jupyter notebooks
-├── src/                     # Source code
-├── docs/                    # Documentation
-├── models/                  # Trained models
-└── presentation/            # Slides and reports
-```
-
 ## 🤝 Contributing
 
 This is an academic research project. For questions or collaborations, please contact via university channels.
